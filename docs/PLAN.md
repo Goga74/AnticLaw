@@ -347,7 +347,7 @@ Goal: Index all chats in SQLite, search by keyword.
 
 ---
 
-### Phase 4: MCP Server (Days 9–11)
+### Phase 4: MCP Server (Days 9–11) ✅
 
 ```
 Goal: Claude Code can search and save to AnticLaw.
@@ -356,8 +356,8 @@ Goal: Claude Code can search and save to AnticLaw.
 **Files:**
 
 `src/anticlaw/mcp/server.py`:
-- [ ] FastMCP server registration
-- [ ] Tools:
+- [x] FastMCP server registration
+- [x] Tools:
   - `aw_ping` — health check
   - `aw_remember` — save insight (with MUST directive in description)
   - `aw_recall` — retrieve insights with filters
@@ -373,33 +373,42 @@ Goal: Claude Code can search and save to AnticLaw.
   - `aw_projects` — list projects
 
 `src/anticlaw/mcp/hooks.py`:
-- [ ] PreCompact hook: block until agent saves context
-- [ ] AutoReminder hook: progressive reminders at 10/20/30 turns
-- [ ] PostSave hook: reset turn counter
-- [ ] Hook installer: merge into `~/.claude/settings.json`
+- [x] AutoReminder hook: progressive reminders at 10/20/30 turns (TurnTracker)
+- [x] PostSave hook: reset turn counter on `aw_remember`
+- [x] Hook installer: `install_claude_code()` and `install_cursor()` merge config JSON
+- [ ] PreCompact hook: block until agent saves context (deferred — requires Claude Code hook integration)
 
 `src/anticlaw/mcp/context_store.py`:
-- [ ] Context-as-variable: save large text to `.acl/contexts/`
-- [ ] Chunking: 6 strategies (auto, lines, paragraphs, headings, chars, regex)
-- [ ] Peek: read chunk by number
-- [ ] Filter: regex grep on context content
+- [x] Context-as-variable: save large text to `.acl/contexts/`
+- [x] Chunking: 6 strategies (auto, lines, paragraphs, headings, chars, regex)
+- [x] Peek: read chunk by number
+- [ ] Filter: regex grep on context content (deferred)
+
+`src/anticlaw/mcp/__main__.py`:
+- [x] Entry point for `python -m anticlaw.mcp`
 
 `src/anticlaw/cli/mcp_cmd.py`:
-- [ ] `aw mcp install claude-code` — register MCP server
-- [ ] `aw mcp install cursor` — register for Cursor
-- [ ] `aw mcp start` — run MCP server (stdio)
+- [x] `aw mcp install claude-code` — register MCP server
+- [x] `aw mcp install cursor` — register for Cursor
+- [x] `aw mcp start` — run MCP server (stdio)
 
 **Templates:**
-- [ ] `agents/anticlaw.md` — agent instructions for Claude Code
-- [ ] `templates/CLAUDE.md` — session instructions
+- [ ] `agents/anticlaw.md` — agent instructions for Claude Code (deferred to Phase 11)
+- [ ] `templates/CLAUDE.md` — session instructions (deferred to Phase 11)
 
-**Tests:**
-- [ ] MCP server starts, responds to ping
-- [ ] remember → recall round-trip
-- [ ] search returns results via MCP
-- [ ] Context load → chunk → peek round-trip
+> **Divergence from plan:** Insights stored in `meta.db` (same database) instead of separate `graph.db` — graph.db is deferred to Phase 6. FTS5 not used for insights (simple LIKE query for now). Turn tracker is in-memory (resets on server restart). `aw_related` and `aw_graph_stats` are stubs returning `not_implemented`. Tool implementations separated into `*_impl(home)` functions for testability. Hook system uses in-server turn tracking rather than external shell hooks. `aw mcp install` writes JSON config files directly (Claude Code `settings.json`, Cursor `mcp.json`). Added `fastmcp>=2.0` to core dependencies.
 
-**Deliverable:** In Claude Code: `aw_search("авторизация")` returns results
+**Tests (52 new, 201 total):**
+- [x] MCP server ping, empty home
+- [x] remember → recall round-trip with filters (query, category, project)
+- [x] forget existing + nonexistent
+- [x] search returns results via MCP impl
+- [x] Context load → chunk → peek round-trip (all 6 strategies)
+- [x] TurnTracker thresholds, reset, custom thresholds
+- [x] Config generation, install_claude_code (preserves existing), install_cursor
+- [x] CLI: mcp start --help, mcp install (claude-code, cursor, invalid target)
+
+**Deliverable:** In Claude Code: `aw_search("авторизация")` returns results ✅
 
 ---
 
@@ -711,6 +720,246 @@ Goal: Production-ready release.
 
 ---
 
+### Phase 12: Local File Source + HTTP API (Days 31–35)
+
+```
+Goal: Index local files (text, code, PDF) and expose HTTP API for external clients.
+```
+
+**Files:**
+
+`src/anticlaw/providers/source/`:
+- [ ] `base.py` — `SourceProvider` Protocol:
+  ```python
+  @runtime_checkable
+  class SourceProvider(Protocol):
+      @property
+      def name(self) -> str: ...
+      def scan(self, paths: list[Path], **filters) -> list[SourceDocument]: ...
+      def read(self, path: Path) -> SourceDocument: ...
+      def watch(self, paths: list[Path], callback: Callable) -> None: ...
+  ```
+- [ ] `local_files.py` — `LocalFilesProvider`:
+  - Recursive scan of configured directories
+  - File readers by extension:
+    - `.txt`, `.md`, `.json`, `.yaml`, `.xml`, `.csv` → direct read
+    - `.py`, `.java`, `.js`, `.ts`, `.go`, `.rs`, `.sql` → read with language tag
+    - `.pdf` → `pymupdf` (fallback: `pdfplumber`)
+    - `.properties`, `.ini`, `.toml`, `.cfg` → direct read
+  - Exclude patterns: `node_modules`, `.git`, `__pycache__`, `target`, `build`, `dist`
+  - Max file size limit (default 10 MB)
+  - File hash for change detection (incremental reindex)
+
+`src/anticlaw/core/models.py` (extend):
+- [ ] `SourceDocument` dataclass: path, content, language, size, hash, indexed_at, source_provider
+
+`src/anticlaw/core/meta_db.py` (extend):
+- [ ] `source_files` table:
+  ```sql
+  CREATE TABLE source_files (
+      id TEXT PRIMARY KEY,
+      file_path TEXT UNIQUE,
+      filename TEXT,
+      extension TEXT,
+      language TEXT,
+      size INTEGER,
+      hash TEXT,
+      indexed_at TEXT,
+      project_id TEXT
+  );
+  CREATE VIRTUAL TABLE source_files_fts USING fts5(
+      filename, content,
+      content=source_files, content_rowid=rowid
+  );
+  ```
+- [ ] `index_source_file()`, `search_source_files()`, `reindex_source_files()`
+
+`src/anticlaw/core/search.py` (extend):
+- [ ] Unified search now queries both `chats_fts` and `source_files_fts`
+- [ ] Result type tag: `chat` | `insight` | `file`
+- [ ] Semantic search across all content types
+
+`src/anticlaw/api/`:
+- [ ] `server.py` — FastAPI app:
+  ```python
+  GET  /api/health
+  GET  /api/search?q=...&project=...&type=...&max_results=...
+  POST /api/ask      {"question": "...", "project": "..."}
+  GET  /api/projects
+  GET  /api/stats
+  ```
+- [ ] Auth: optional API key (for remote access), no auth for localhost
+- [ ] CORS: configurable origins
+
+CLI:
+- [ ] `aw scan [path]` — index local files from configured paths
+- [ ] `aw scan --watch` — watch for changes (one-shot, not daemon)
+- [ ] `aw api start [--port 8420]` — start HTTP API server
+- [ ] `aw search` — now shows results from files too
+
+Config:
+```yaml
+sources:
+  local-files:
+    enabled: true
+    paths:
+      - C:\Users\igor.zamiatin\srdev
+      - C:\Users\igor.zamiatin\Documents\specs
+    extensions: [.java, .py, .txt, .md, .pdf, .json, .xml, .yaml, .properties, .sql]
+    exclude: [node_modules, .git, __pycache__, target, build, dist, .idea, .vscode]
+    max_file_size_mb: 10
+
+api:
+  enabled: false
+  host: 127.0.0.1
+  port: 8420
+  api_key: keyring          # optional, for remote access
+  cors_origins: []
+```
+
+**Dependencies:**
+```toml
+[project.optional-dependencies]
+source-pdf = ["pymupdf"]
+api        = ["fastapi", "uvicorn"]
+```
+
+**Tests:**
+- [ ] Scan directory → correct files indexed
+- [ ] PDF extraction works
+- [ ] Exclude patterns respected
+- [ ] Unified search returns both chats and files
+- [ ] HTTP API endpoints respond correctly
+- [ ] Incremental reindex (only changed files)
+
+**Deliverable:** `aw search "TreeMap"` finds both LLM chats about TreeMap and .java files using TreeMap
+
+---
+
+### Phase 13: Voice Input — Local Whisper (Days 36–38)
+
+```
+Goal: Voice-to-search using offline Whisper model.
+```
+
+**Files:**
+
+`src/anticlaw/input/`:
+- [ ] `base.py` — `InputProvider` Protocol:
+  ```python
+  @runtime_checkable
+  class InputProvider(Protocol):
+      @property
+      def name(self) -> str: ...
+      def listen(self) -> str: ...       # returns transcribed text
+      def is_available(self) -> bool: ... # check hardware/deps
+  ```
+- [ ] `whisper_input.py` — `WhisperInputProvider`:
+  - Uses `faster-whisper` (CTranslate2 backend, fast on CPU)
+  - Model: `base` (~150 MB, good for commands) or `small` (~500 MB, better accuracy)
+  - Multilingual: Russian + English out of the box
+  - VAD (Voice Activity Detection): auto-detect speech start/end
+  - Push-to-talk mode: hold key to record
+  - Continuous mode: always listening for wake word
+
+CLI:
+- [ ] `aw listen` — listen → transcribe → search → show results
+- [ ] `aw listen --continuous` — loop: listen → search → speak result (via TTS)
+- [ ] `aw listen --mode ask` — voice question → `aw ask` → spoken answer
+
+Config:
+```yaml
+voice:
+  enabled: false
+  model: base                    # base (~150 MB) | small (~500 MB) | medium (~1.5 GB)
+  language: auto                 # auto | ru | en
+  push_to_talk_key: ctrl+space
+  wake_word: null                # optional: "антик" or "hey antic"
+```
+
+**Dependencies:**
+```toml
+[project.optional-dependencies]
+voice = ["faster-whisper", "sounddevice", "numpy"]
+tts   = ["pyttsx3"]             # optional: text-to-speech for answers
+```
+
+**Tests:**
+- [ ] Whisper model loads and transcribes sample audio
+- [ ] Russian text recognized
+- [ ] Push-to-talk key binding works
+- [ ] Transcribed text passed to search correctly
+
+**Deliverable:** `aw listen` → say "найди чаты про авторизацию" → results appear
+
+---
+
+### Phase 14: Alexa Integration (Days 39–42)
+
+```
+Goal: Ask AnticLaw questions via Amazon Alexa.
+```
+
+**Architecture:**
+
+```
+Voice → Alexa → AWS Lambda → HTTPS tunnel → AnticLaw HTTP API → response → Lambda → Alexa → Voice
+                                  ↑
+                          Cloudflare Tunnel / ngrok / Tailscale
+```
+
+**Components:**
+
+`alexa/` (separate directory, not in anticlaw package):
+- [ ] `skill.json` — Alexa Skill manifest
+- [ ] `interaction_model.json` — intents:
+  - `SearchIntent`: "найди {query}" / "search for {query}"
+  - `AskIntent`: "спроси {question}" / "ask {question}"
+  - `StatusIntent`: "статус базы знаний" / "knowledge base status"
+- [ ] `lambda_function.py` — AWS Lambda handler:
+  - Receives Alexa request
+  - Calls AnticLaw HTTP API (Phase 12)
+  - Formats response for speech
+  - Handles Russian + English
+
+`src/anticlaw/api/server.py` (extend):
+- [ ] `/api/voice/search` — optimized for short spoken responses
+- [ ] `/api/voice/ask` — Q&A with concise answer format
+
+CLI:
+- [ ] `aw tunnel start` — start Cloudflare Tunnel to expose API
+- [ ] `aw tunnel status` — show tunnel URL
+- [ ] `aw alexa setup` — guide for Alexa Skill configuration
+
+Config:
+```yaml
+api:
+  tunnel:
+    provider: cloudflare         # cloudflare | ngrok | tailscale
+    enabled: false
+    # Cloudflare Tunnel: requires cloudflared installed
+    # ngrok: requires ngrok token in keyring
+```
+
+**Dependencies:**
+```toml
+[project.optional-dependencies]
+alexa = ["ask-sdk-core"]         # Alexa Skills Kit SDK (for Lambda)
+tunnel = ["cloudflared"]         # or just document manual install
+```
+
+**Prerequisite:** Phase 12 (HTTP API) must be complete.
+
+**Tests:**
+- [ ] Lambda handler processes Alexa request correctly
+- [ ] Voice-optimized responses are concise (<8 seconds spoken)
+- [ ] Russian intent recognition works
+- [ ] Tunnel exposes local API
+
+**Deliverable:** "Alexa, ask AnticLaw to find chats about authorization" → spoken answer
+
+---
+
 ## Dependency Summary
 
 ### Core (always installed)
@@ -757,13 +1006,16 @@ Ollama       → ollama.com (for embeddings + local LLM)
 | 1 | 2–3 | Core models + storage | (internal) |
 | 2 | 4–5 | Claude import | `aw init`, `aw import claude` |
 | 3 | 6–8 | Search + metadata | `aw search`, `aw list`, `aw show`, `aw move`, `aw tag` |
-| 4 | 9–11 | MCP server | `aw mcp install`, MCP tools work in Claude Code |
+| 4 | 9–11 | MCP server | `aw mcp install`, MCP tools in Claude Code |
 | 5 | 12–14 | Advanced search | 5-tier search operational |
 | 6 | 15–17 | Knowledge graph | `aw related`, `aw why`, `aw timeline` |
 | 7 | 18–19 | Local LLM | `aw summarize`, `aw autotag`, `aw ask` |
 | 8 | 20–23 | Daemon + tray | `aw daemon install`, auto-indexing, backup |
 | 9 | 24–25 | Antientropy | `aw inbox`, `aw stale`, `aw duplicates`, `aw health` |
 | 10 | 26–27 | ChatGPT provider | `aw import chatgpt` |
-| 11 | 28–30 | Release | PyPI, Docker, docs |
+| 11 | 28–30 | v1.0 Release | PyPI, Docker, docs |
+| **12** | **31–35** | **Local files + HTTP API** | **`aw scan`, `aw api start`** |
+| **13** | **36–38** | **Voice input (Whisper)** | **`aw listen`** |
+| **14** | **39–42** | **Alexa integration** | **`aw tunnel start`, Alexa Skill** |
 
-**Total: ~30 working days to v1.0**
+**Total: ~42 working days to v1.5**

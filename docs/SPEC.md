@@ -675,8 +675,10 @@ anticlaw/
 │   │   ├── embeddings.py        # Ollama embedding provider
 │   │   └── retention.py         # 3-zone lifecycle
 │   ├── mcp/
-│   │   ├── server.py            # FastMCP server — 13 tool definitions
-│   │   └── hooks.py             # PreCompact, AutoReminder, PostSave
+│   │   ├── server.py            # ✅ FastMCP server — 13 tool definitions
+│   │   ├── context_store.py     # ✅ Context-as-variable storage + chunking
+│   │   ├── hooks.py             # ✅ TurnTracker, config generation, install functions
+│   │   └── __main__.py          # ✅ Entry point for python -m anticlaw.mcp
 │   ├── providers/
 │   │   ├── registry.py          # ✅ ProviderRegistry (unified for all 3 families)
 │   │   ├── llm/
@@ -711,7 +713,7 @@ anticlaw/
 │       ├── knowledge_cmd.py     # aw inbox, stale, duplicates ...
 │       ├── provider_cmd.py      # aw providers ...
 │       ├── daemon_cmd.py        # aw daemon ...
-│       └── mcp_cmd.py           # aw mcp ...
+│       └── mcp_cmd.py           # ✅ aw mcp start, install
 ├── tests/
 │   ├── unit/
 │   └── integration/
@@ -926,13 +928,14 @@ When enabled:
 - [x] CLI: `aw search` with --project, --tag, --exact, --max-results
 - [ ] Indexing pipeline: auto-index on import
 
-### v0.3 — MCP Server (1 week)
+### v0.3 — MCP Server (1 week) ✅
 
-- [ ] FastMCP server with 13 tools
-- [ ] Hooks: PreCompact, AutoReminder
-- [ ] Registration: `aw mcp install claude-code`
-- [ ] Agent template: `agents/anticlaw.md`
-- [ ] CLAUDE.md template for projects
+- [x] FastMCP server with 13 tools (aw_related, aw_graph_stats are stubs)
+- [x] Hooks: AutoReminder (TurnTracker at 10/20/30 turns), PostSave (reset on remember)
+- [x] Registration: `aw mcp install claude-code`, `aw mcp install cursor`
+- [x] Context-as-variable storage with 6 chunking strategies
+- [ ] Agent template: `agents/anticlaw.md` (deferred to v1.0)
+- [ ] CLAUDE.md template for projects (deferred to v1.0)
 
 ### v0.4 — Knowledge Graph (1 week)
 
@@ -997,3 +1000,229 @@ When enabled:
 5. **13 MCP tools, not 21.** MemCP's 21 tools is too many — leads to tool confusion for the LLM. We merge retention and project tools into CLI-only commands, keeping MCP focused on what the agent needs during a session.
 
 6. **No fork of EchoVault or MemCP.** Both solve different problems. Our file-first, multi-provider architecture is fundamentally different. Easier to build from scratch and borrow patterns than to refactor someone else's data model.
+
+---
+
+## 19. Source Providers (v1.1+)
+
+Fourth provider family — content sources beyond LLM chat exports.
+
+### Architecture
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                  Provider Registry                       │
+│                                                         │
+│  ┌─────────────┐  ┌──────────────┐  ┌───────────────┐  │
+│  │ LLM         │  │ Backup       │  │ Embedding     │  │
+│  │ Providers   │  │ Providers    │  │ Providers     │  │
+│  └─────────────┘  └──────────────┘  └───────────────┘  │
+│                                                         │
+│  ┌─────────────┐  ┌──────────────┐                     │
+│  │ Source       │  │ Input        │  ← NEW             │
+│  │ Providers   │  │ Providers    │                     │
+│  ├─────────────┤  ├──────────────┤                     │
+│  │ llm-export  │  │ cli          │                     │
+│  │ local-files │  │ mcp          │                     │
+│  │ obsidian    │  │ http-api     │                     │
+│  │ notion      │  │ whisper      │                     │
+│  │ (your own)  │  │ alexa        │                     │
+│  └─────────────┘  └──────────────┘                     │
+└─────────────────────────────────────────────────────────┘
+```
+
+### Source Provider Contract
+
+```python
+@runtime_checkable
+class SourceProvider(Protocol):
+    """Contract for content source integration."""
+
+    @property
+    def name(self) -> str: ...
+
+    @property
+    def info(self) -> SourceInfo: ...
+
+    def scan(self, paths: list[Path], **filters) -> list[SourceDocument]:
+        """Scan paths, return indexable documents."""
+        ...
+
+    def read(self, path: Path) -> SourceDocument:
+        """Read a single document."""
+        ...
+
+    def watch(self, paths: list[Path], callback: Callable) -> None:
+        """Watch for changes (integrates with daemon watcher)."""
+        ...
+```
+
+### Local Files Provider
+
+Scans configured directories, reads text/code/PDF files, indexes into the same
+search pipeline as LLM chats. Results appear alongside chat results in unified search.
+
+**Supported formats:**
+
+| Category | Extensions | Reader |
+|----------|-----------|--------|
+| Text | `.txt`, `.md`, `.csv`, `.json`, `.xml`, `.yaml`, `.toml` | Direct read (UTF-8) |
+| Code | `.py`, `.java`, `.js`, `.ts`, `.go`, `.rs`, `.sql`, `.sh` | Read with language metadata |
+| Config | `.properties`, `.ini`, `.cfg`, `.env.example` | Direct read |
+| PDF | `.pdf` | `pymupdf` (fast) or `pdfplumber` (fallback) |
+
+**Not supported (v1.1):** `.docx`, `.xlsx`, `.pptx`, `.png`, `.jpg` (planned for v2.0 with OCR).
+
+### Unified Search
+
+After Phase 12, `aw search` returns three result types:
+
+```
+$ aw search "TreeMap"
+
+[chat]  2025-02-18 — "Java Collections Discussion" (project: java-dev)
+        ...discussed TreeMap vs HashMap performance for sorted keys...
+
+[file]  C:\srdev\myapp\src\Cache.java (line 42)
+        private TreeMap<String, Object> cache = new TreeMap<>();
+
+[insight] "Use TreeMap when iteration order matters" (decision, high)
+```
+
+---
+
+## 20. Input Providers (v1.2+)
+
+Fifth provider family — how queries reach AnticLaw.
+
+### Input Provider Contract
+
+```python
+@runtime_checkable
+class InputProvider(Protocol):
+    """Contract for query input methods."""
+
+    @property
+    def name(self) -> str: ...
+
+    def listen(self) -> str:
+        """Get input from user. Returns query text."""
+        ...
+
+    def respond(self, text: str) -> None:
+        """Send response back to user (text, voice, etc.)."""
+        ...
+
+    def is_available(self) -> bool:
+        """Check if hardware/dependencies are available."""
+        ...
+```
+
+### Existing inputs (already implemented)
+
+| Input | How it works |
+|-------|-------------|
+| CLI | `aw search "query"` — text in terminal |
+| MCP | Claude Code calls `aw_search()` via stdio |
+
+### New inputs (post-v1.0)
+
+| Input | How it works |
+|-------|-------------|
+| HTTP API | `GET /api/search?q=...` — any HTTP client |
+| Whisper | Microphone → offline STT → search → results in terminal |
+| Alexa | Voice → AWS Lambda → HTTP API → voice response |
+
+---
+
+## 21. HTTP API (v1.1+)
+
+FastAPI-based REST API. Runs alongside CLI and MCP server.
+
+### Endpoints
+
+```
+GET  /api/health                    → {"status": "ok", "version": "..."}
+GET  /api/search?q=...&project=...  → {"results": [...]}
+POST /api/ask   {"question": "..."}  → {"answer": "...", "sources": [...]}
+GET  /api/projects                   → {"projects": [...]}
+GET  /api/stats                      → {"chats": N, "insights": N, ...}
+```
+
+### Voice-optimized endpoints
+
+```
+GET  /api/voice/search?q=...        → {"spoken": "short answer for TTS"}
+POST /api/voice/ask                  → {"spoken": "concise answer < 30 words"}
+```
+
+### Security
+
+- **Localhost:** No auth required (default: bind to 127.0.0.1)
+- **Remote access:** API key in `Authorization: Bearer <key>` header, key stored in keyring
+- **Tunnel:** Cloudflare Tunnel / ngrok for Alexa integration (HTTPS required by Amazon)
+
+---
+
+## 22. Voice Input — Whisper (v1.2+)
+
+Offline speech-to-text using `faster-whisper` (CTranslate2 backend).
+
+### Models
+
+| Model | Size | Speed | Quality | Use case |
+|-------|------|-------|---------|----------|
+| `tiny` | ~75 MB | Fastest | Basic | Wake word detection |
+| `base` | ~150 MB | Fast | Good | Short commands |
+| `small` | ~500 MB | Medium | Great | Full sentences, Russian |
+| `medium` | ~1.5 GB | Slow | Excellent | Complex queries |
+
+### Modes
+
+1. **Push-to-talk:** Hold `Ctrl+Space` → speak → release → search
+2. **Continuous:** Always listening, activated by wake word ("антик" / "hey antic")
+3. **Single shot:** `aw listen` → one query → results → exit
+
+### Language
+
+Whisper supports 99 languages. Russian and English work without configuration.
+`language: auto` detects automatically.
+
+---
+
+## 23. Alexa Integration (v1.3+)
+
+### Prerequisites
+
+1. HTTP API running (Phase 12)
+2. HTTPS tunnel to localhost (Cloudflare Tunnel recommended)
+3. Amazon Developer account (free)
+4. Alexa-enabled device on same Amazon account
+
+### Alexa Skill Intents
+
+| Intent | Utterances (EN) | Utterances (RU) |
+|--------|----------------|-----------------|
+| SearchIntent | "search for {query}" | "найди {query}" |
+| AskIntent | "ask {question}" | "спроси {question}" |
+| StatusIntent | "status" | "статус" |
+
+### Data Flow
+
+```
+User: "Alexa, ask AnticLaw to find chats about authorization"
+  → Alexa STT: "find chats about authorization"
+  → Intent: SearchIntent, query="authorization"
+  → Lambda: GET https://tunnel.example.com/api/voice/search?q=authorization
+  → AnticLaw: search → format short answer
+  → Lambda: build Alexa response
+  → Alexa TTS: "I found 3 chats about authorization. The most recent is
+                from February 18th in project Alpha, about JWT tokens."
+```
+
+### Limitations
+
+- Alexa response max ~8 seconds of speech (~60 words)
+- Requires internet (Alexa → AWS → tunnel → local)
+- Tunnel must be running (daemon manages this)
+- Latency: ~2-4 seconds end-to-end
