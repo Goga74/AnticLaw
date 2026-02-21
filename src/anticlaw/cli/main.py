@@ -5,6 +5,7 @@ import click
 from anticlaw import __version__
 from anticlaw.cli.import_cmd import import_group
 from anticlaw.cli.graph_cmd import related_cmd, timeline_cmd, why_cmd
+from anticlaw.cli.llm_cmd import ask_cmd, autotag_cmd, summarize_cmd
 from anticlaw.cli.project_cmd import (
     create_group,
     list_cmd,
@@ -35,6 +36,9 @@ cli.add_command(mcp_group)
 cli.add_command(related_cmd)
 cli.add_command(why_cmd)
 cli.add_command(timeline_cmd)
+cli.add_command(summarize_cmd)
+cli.add_command(autotag_cmd)
+cli.add_command(ask_cmd)
 
 
 if __name__ == "__main__":
