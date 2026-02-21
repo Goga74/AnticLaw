@@ -29,8 +29,8 @@ src/anticlaw/
 │   ├── config.py            # ✅ Config loader with defaults, ACL_HOME resolution
 │   ├── fileutil.py          # ✅ Atomic writes, safe names, flock, permissions
 │   ├── meta_db.py           # ✅ SQLite WAL + FTS5 metadata index (MetaDB)
-│   ├── search.py            # ✅ Tier 1 keyword search dispatcher
-│   ├── index.py             # ChromaDB vector indexing (future)
+│   ├── search.py            # ✅ 5-tier search dispatcher (keyword/BM25/fuzzy/semantic/hybrid)
+│   ├── index.py             # ✅ ChromaDB vector indexing (VectorIndex)
 │   ├── graph.py             # MAGMA 4-graph (temporal/entity/semantic/causal edges)
 │   ├── embeddings.py        # Ollama/OpenAI/local embedding providers
 │   └── retention.py         # 3-zone lifecycle (active → archive → purge)
@@ -53,8 +53,8 @@ src/anticlaw/
 │   │   ├── s3.py            # boto3 (AWS/MinIO/B2/R2)
 │   │   └── rsync.py         # shells out to rsync
 │   └── embedding/
-│       ├── base.py          # EmbeddingProvider Protocol
-│       ├── ollama.py        # nomic-embed-text (768-dim)
+│       ├── base.py          # ✅ EmbeddingProvider Protocol + EmbeddingInfo
+│       ├── ollama.py        # ✅ OllamaEmbeddingProvider (nomic-embed-text, 768-dim)
 │       └── local_model.py   # model2vec/fastembed (256-dim)
 ├── llm/
 │   ├── summarizer.py
@@ -146,7 +146,7 @@ There are three main approaches...
 
 ## Current Phase
 
-Phase 4 complete. Next: Phase 5 (Advanced search — Tiers 2–5).
+Phase 5 complete. Next: Phase 6 (Knowledge Graph — MAGMA).
 
 ### Completed
 - **Phase 0:** Scaffolding — pyproject.toml, directory structure, `aw --version` ✅
@@ -154,9 +154,10 @@ Phase 4 complete. Next: Phase 5 (Advanced search — Tiers 2–5).
 - **Phase 2:** Claude provider + import — ProviderRegistry, LLMProvider Protocol, ClaudeProvider, `aw import claude` ✅
 - **Phase 3:** SQLite metadata + basic search — MetaDB (WAL+FTS5), search dispatcher, `aw search`, `aw list/show/move/tag/create/reindex` ✅
 - **Phase 4:** MCP server — FastMCP with 13 tools, context-store with 6 chunking strategies, TurnTracker, `aw mcp start/install` ✅
+- **Phase 5:** Advanced search — Tiers 2-5 (BM25 via bm25s, fuzzy via rapidfuzz, semantic via ChromaDB+Ollama embeddings, hybrid fusion), EmbeddingProvider Protocol, OllamaEmbeddingProvider, VectorIndex, auto-tier selection, graceful degradation ✅
 
 ### Test coverage
-201 unit tests passing (models, fileutil, storage, config, registry, claude provider, import CLI, meta_db, search, search CLI, project CLI, context store, hooks, MCP tools, MCP CLI).
+266 unit tests passing (models, fileutil, storage, config, registry, claude provider, import CLI, meta_db, search, search CLI, project CLI, context store, hooks, MCP tools, MCP CLI, embedding provider, vector index, advanced search tiers, fallback behavior).
 
 ## Specs
 
