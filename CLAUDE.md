@@ -112,6 +112,7 @@ src/anticlaw/
 ```bash
 # Development
 pip install -e ".[dev]"          # Install in dev mode
+pip install -e ".[dev,llm]"      # Dev mode + LLM support (httpx for Ollama)
 pytest                           # Run tests
 pytest tests/unit/               # Unit tests only
 ruff check src/                  # Lint
@@ -122,6 +123,11 @@ aw --version                     # Version check
 aw import claude export.zip      # Import Claude export
 aw search "query"                # Search knowledge base
 aw list                          # List projects
+aw summarize <chat-or-project>   # Generate/update summary via Ollama
+aw autotag <chat-or-project>     # Auto-generate tags via Ollama
+aw ask "question"                # Q&A over knowledge base via Ollama
+aw related <node-id>             # Graph traversal from a node
+aw why "decision"                # Trace causal chain
 aw health                        # Check KB integrity
 ```
 
