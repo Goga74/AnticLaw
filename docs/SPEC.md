@@ -292,12 +292,13 @@ Query → Tier 5 (hybrid) if available
        → Tier 1 (keyword) always available
 ```
 
-### Tier 1: Keyword (stdlib)
+### Tier 1: Keyword (SQLite FTS5)
 
-- **How:** Substring / regex matching.
-- **Deps:** None (Python stdlib).
+- **How:** Full-text search via SQLite FTS5 MATCH with BM25 ranking. Searches across chat titles, summaries, message content, and tags.
+- **Deps:** None (FTS5 is built into Python's sqlite3 module).
 - **When:** Always available as fallback.
-- **Limitation:** Case-sensitive by default, no ranking.
+- **Features:** Multi-word AND queries, exact phrase matching (`--exact`), ranked results with snippets.
+- **Limitation:** No typo tolerance, no semantic understanding.
 
 ### Tier 2: BM25 (bm25s)
 
@@ -539,27 +540,30 @@ aw export --all --format zip          # Export entire KB
 ### Project Management
 
 ```bash
-aw list                               # List all projects
+aw list                               # List all projects (from meta.db index)
 aw list project-alpha                 # List chats in a project
-aw show <chat-id>                     # Display a chat
+aw show <chat-id>                     # Display a chat (supports partial ID)
 aw create project "New Project"       # Create a new project
 aw move <chat-id> <project>           # Move chat between projects
-aw rename <chat-id> "New title"       # Rename a chat
 aw tag <chat-id> auth security        # Add tags
-aw untag <chat-id> security           # Remove tag
-aw link <chat-A> <chat-B>            # Create cross-reference
+aw reindex                            # Rebuild search index from filesystem
+aw rename <chat-id> "New title"       # Rename a chat (planned)
+aw untag <chat-id> security           # Remove tag (planned)
+aw link <chat-A> <chat-B>            # Create cross-reference (planned)
 ```
 
 ### Search & Discovery
 
 ```bash
-aw search "авторизация"               # Semantic + keyword search
-aw search --exact "JWT"               # Keyword only
+aw search "авторизация"               # FTS5 keyword search (Tier 1)
+aw search --exact "JWT"               # Exact phrase match
 aw search --project alpha "tokens"    # Scope to project
-aw search --max-tokens 2000 "auth"    # Token-budgeted search
-aw related <node-id>                  # Graph traversal
-aw why "chose SQLite"                 # Causal chain lookup
-aw timeline project-alpha             # Chronological view
+aw search --tag security "auth"       # Filter by tag
+aw search --max-results 10 "auth"     # Limit results
+aw search --max-tokens 2000 "auth"    # Token-budgeted search (planned)
+aw related <node-id>                  # Graph traversal (planned)
+aw why "chose SQLite"                 # Causal chain lookup (planned)
+aw timeline project-alpha             # Chronological view (planned)
 ```
 
 ### Knowledge Management (AnticLaw)
@@ -658,25 +662,26 @@ pip install anticlaw[scraper]              # + Playwright for one-time import
 ```
 anticlaw/
 ├── src/anticlaw/
-│   ├── __init__.py              # __version__
+│   ├── __init__.py              # ✅ __version__
 │   ├── core/
-│   │   ├── models.py            # Chat, ChatMessage, Project, Insight, Edge + provider models
-│   │   ├── storage.py           # ChatStorage: file system CRUD
-│   │   ├── config.py            # Config loader with defaults, ACL_HOME resolution
-│   │   ├── fileutil.py          # Atomic writes, safe names, locking, permissions
-│   │   ├── index.py             # ChromaDB + FTS5 indexing
+│   │   ├── models.py            # ✅ Chat, ChatMessage, Project, Insight, Edge + provider models
+│   │   ├── storage.py           # ✅ ChatStorage: file system CRUD
+│   │   ├── config.py            # ✅ Config loader with defaults, ACL_HOME resolution
+│   │   ├── fileutil.py          # ✅ Atomic writes, safe names, locking, permissions
+│   │   ├── meta_db.py           # ✅ SQLite WAL + FTS5 metadata index (MetaDB)
+│   │   ├── search.py            # ✅ Tier 1 keyword search dispatcher
+│   │   ├── index.py             # ChromaDB vector indexing
 │   │   ├── graph.py             # MAGMA 4-graph (SQLite)
-│   │   ├── search.py            # 5-tier search engine
 │   │   ├── embeddings.py        # Ollama embedding provider
 │   │   └── retention.py         # 3-zone lifecycle
 │   ├── mcp/
 │   │   ├── server.py            # FastMCP server — 13 tool definitions
 │   │   └── hooks.py             # PreCompact, AutoReminder, PostSave
 │   ├── providers/
-│   │   ├── registry.py          # ProviderRegistry (unified for all 3 families)
+│   │   ├── registry.py          # ✅ ProviderRegistry (unified for all 3 families)
 │   │   ├── llm/
-│   │   │   ├── base.py          # LLMProvider Protocol + ProviderInfo + Capability
-│   │   │   ├── claude.py        # Parse conversations.json + scrubbing
+│   │   │   ├── base.py          # ✅ LLMProvider Protocol + ProviderInfo + Capability
+│   │   │   ├── claude.py        # ✅ Parse conversations.json + scrubbing
 │   │   │   ├── chatgpt.py       # ChatGPT import/export
 │   │   │   └── ollama.py        # Local LLM operations
 │   │   ├── backup/
@@ -699,10 +704,10 @@ anticlaw/
 │   │   ├── tray.py              # pystray system tray
 │   │   └── ipc.py               # Unix socket / Named pipe
 │   └── cli/
-│       ├── main.py              # Click CLI entry point
-│       ├── import_cmd.py        # aw import ...
-│       ├── search_cmd.py        # aw search ...
-│       ├── project_cmd.py       # aw list, move, create ...
+│       ├── main.py              # ✅ Click CLI entry point
+│       ├── import_cmd.py        # ✅ aw import claude <zip>
+│       ├── search_cmd.py        # ✅ aw search with filters
+│       ├── project_cmd.py       # ✅ aw list, show, move, tag, create, reindex
 │       ├── knowledge_cmd.py     # aw inbox, stale, duplicates ...
 │       ├── provider_cmd.py      # aw providers ...
 │       ├── daemon_cmd.py        # aw daemon ...
@@ -907,18 +912,18 @@ When enabled:
 - [x] File system storage: read/write chat .md files with YAML frontmatter
 - [x] Claude Provider: parse `conversations.json` → .md files
 - [ ] Playwright scraper: collect project→chat mapping from claude.ai (one-time)
-- [ ] SQLite metadata DB
+- [x] SQLite metadata DB (meta_db.py with WAL mode + FTS5)
 - [x] CLI: `aw import claude`
-- [ ] CLI: `aw list`, `aw show`
+- [x] CLI: `aw list`, `aw show`, `aw move`, `aw tag`, `aw create project`, `aw reindex`
 
 ### v0.2 — Search (1 week)
 
-- [ ] Tier 1: keyword search (stdlib)
+- [x] Tier 1: keyword search (SQLite FTS5 with BM25 ranking)
 - [ ] Tier 2: BM25 (bm25s)
 - [ ] Tier 3: fuzzy (rapidfuzz)
 - [ ] Tier 4: semantic (Ollama + ChromaDB)
 - [ ] Tier 5: hybrid fusion
-- [ ] CLI: `aw search`
+- [x] CLI: `aw search` with --project, --tag, --exact, --max-results
 - [ ] Indexing pipeline: auto-index on import
 
 ### v0.3 — MCP Server (1 week)

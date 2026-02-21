@@ -261,7 +261,7 @@ Goal: Import Claude.ai export into local file structure.
 
 ---
 
-### Phase 3: SQLite Metadata + Basic Search (Days 6–8)
+### Phase 3: SQLite Metadata + Basic Search (Days 6–8) ✅
 
 ```
 Goal: Index all chats in SQLite, search by keyword.
@@ -270,8 +270,8 @@ Goal: Index all chats in SQLite, search by keyword.
 **Files:**
 
 `src/anticlaw/core/meta_db.py`:
-- [ ] SQLite database at `.acl/meta.db`
-- [ ] Tables:
+- [x] SQLite database at `.acl/meta.db`
+- [x] Tables:
   ```sql
   CREATE TABLE chats (
       id TEXT PRIMARY KEY,
@@ -287,7 +287,8 @@ Goal: Index all chats in SQLite, search by keyword.
       status TEXT,
       file_path TEXT,
       token_count INTEGER,
-      message_count INTEGER
+      message_count INTEGER,
+      content TEXT        -- full message text for FTS indexing
   );
 
   CREATE TABLE projects (
@@ -302,39 +303,47 @@ Goal: Index all chats in SQLite, search by keyword.
   );
 
   CREATE VIRTUAL TABLE chats_fts USING fts5(
-      title, summary, content, tags,
-      content=chats, content_rowid=rowid
+      chat_id UNINDEXED, title, summary, content, tags
   );
   ```
-- [ ] `index_chat(chat, file_path)` — insert/update in both tables
-- [ ] `index_project(project, dir_path)` — insert/update
-- [ ] `reindex_all(home)` — walk file system, index everything
-- [ ] `search_keyword(query)` → list of results with snippets
+- [x] `index_chat(chat, file_path)` — insert/update in both tables
+- [x] `index_project(project, dir_path)` — insert/update
+- [x] `reindex_all(home)` — walk file system, index everything
+- [x] `search_keyword(query)` → list of results with snippets
+
+> **Divergence from plan:** FTS5 uses a standalone table with `chat_id UNINDEXED` instead of `content=chats, content_rowid=rowid` (external content table). This is simpler to maintain — no triggers needed, DELETE/INSERT for updates. Added `content TEXT` column to `chats` table to store concatenated message text for FTS indexing. Also added `MetaDB.get_chat()`, `list_projects()`, `list_chats()`, `update_chat_tags()`, `update_chat_path()` methods for CLI support. `SearchResult` dataclass lives in `meta_db.py`.
 
 `src/anticlaw/core/search.py`:
-- [ ] Tier 1: `search_keyword(query)` — FTS5 MATCH
-- [ ] `search(query, **filters)` — dispatcher, currently only Tier 1
-- [ ] Filters: project, tags, importance, date range, max_results
+- [x] Tier 1: `search_keyword(query)` — FTS5 MATCH
+- [x] `search(db, query, **filters)` — dispatcher, currently only Tier 1
+- [x] Filters: project, tags, importance, date range, max_results
+
+> **Divergence:** `search()` takes `db: MetaDB` as explicit first argument (no global state). Tier 1 uses FTS5 MATCH with BM25 ranking (more powerful than the spec's "substring/regex" description).
 
 `src/anticlaw/cli/search_cmd.py`:
-- [ ] `aw search <query> [--project X] [--tag Y] [--exact]`
-- [ ] Display: title, project, date, snippet with highlighted match
+- [x] `aw search <query> [--project X] [--tag Y] [--exact] [--max-results N]`
+- [x] Display: title, project, short ID, snippet with `**highlight**` markers
 
 `src/anticlaw/cli/project_cmd.py`:
-- [ ] `aw list` — list projects (from meta.db)
-- [ ] `aw list <project>` — list chats in project
-- [ ] `aw show <chat-id>` — display chat content
-- [ ] `aw move <chat-id> <project>` — move file + update meta.db
-- [ ] `aw tag <chat-id> <tags...>` — update tags in frontmatter + meta.db
-- [ ] `aw create project <name>` — create folder + _project.yaml
+- [x] `aw list` — list projects (from meta.db)
+- [x] `aw list <project>` — list chats in project
+- [x] `aw show <chat-id>` — display chat content
+- [x] `aw move <chat-id> <project>` — move file + update meta.db
+- [x] `aw tag <chat-id> <tags...>` — update tags in frontmatter + meta.db
+- [x] `aw create project <name>` — create folder + _project.yaml
+- [x] `aw reindex` — rebuild entire search index from filesystem
 
-**Tests:**
-- [ ] Index → search → find
-- [ ] FTS5 ranking (multi-word queries)
-- [ ] Move updates both file system and meta.db
-- [ ] Tag update reflects in both file and DB
+> **Divergence:** Added `aw reindex` command (not in original plan) — essential for building the index after imports. All commands that reference `<chat-id>` support partial (prefix) ID matching. Each command has `--home` flag for overriding ACL_HOME.
 
-**Deliverable:** `aw search "авторизация"` returns results with snippets
+**Tests (52 new, 149 total):**
+- [x] Index → search → find
+- [x] FTS5 ranking (multi-word queries)
+- [x] Move updates both file system and meta.db
+- [x] Tag update reflects in both file and DB
+- [x] Reindex from filesystem
+- [x] CLI: search, list, show, move, tag, create, reindex
+
+**Deliverable:** `aw search "авторизация"` returns results with snippets ✅
 
 ---
 
