@@ -955,6 +955,123 @@ tunnel = ["cloudflared"]         # or just document manual install
 
 ---
 
+### Phase 15: Web UI (Days 43–48)
+
+```
+Goal: Browser-based GUI at localhost for search, graph visualization, project management.
+```
+
+**Architecture:**
+
+```
+aw ui → uvicorn starts → browser opens http://localhost:8420
+
+┌─────────────────────────────────────────────┐
+│  Browser (localhost:8420)                    │
+│  ┌────────────────────────────────────────┐  │
+│  │  SPA (Svelte or React)                │  │
+│  │  - Dashboard: stats, recent activity  │  │
+│  │  - Search: unified, filters, previews │  │
+│  │  - Projects: tree, chat list, viewer  │  │
+│  │  - Graph: MAGMA visualization (D3.js) │  │
+│  │  - Inbox: classify, drag & drop       │  │
+│  │  - Settings: config editor            │  │
+│  └──────────────┬─────────────────────────┘  │
+│                 │ fetch()                     │
+│  ┌──────────────▼─────────────────────────┐  │
+│  │  FastAPI backend (Phase 12 API)        │  │
+│  │  + SSE for live updates from daemon    │  │
+│  │  + WebSocket for graph exploration     │  │
+│  └────────────────────────────────────────┘  │
+└─────────────────────────────────────────────┘
+```
+
+**Prerequisite:** Phase 12 (HTTP API).
+
+**Files:**
+
+`src/anticlaw/ui/`:
+- [ ] `__init__.py`
+- [ ] `app.py` — mount SPA static files + API routes
+- [ ] `static/` — built SPA bundle (committed, no Node.js needed at runtime)
+
+`ui-src/` (separate, not in anticlaw package):
+- [ ] Svelte/React project
+- [ ] `npm run build` → outputs to `src/anticlaw/ui/static/`
+
+**Pages:**
+
+1. **Dashboard**
+   - Total chats, insights, projects, files indexed
+   - Recent activity timeline
+   - Health status (from `aw health`)
+   - Backup status (last backup time per provider)
+
+2. **Search**
+   - Search bar with auto-tier indicator (keyword/BM25/fuzzy/semantic/hybrid)
+   - Filters: project, tags, type (chat/file/insight), date range, importance
+   - Results with highlighted snippets
+   - Click result → chat viewer or file preview
+   - Token budget slider (for MCP context)
+
+3. **Projects**
+   - Sidebar: project tree (folders)
+   - Main: chat list with metadata (date, tags, importance, summary)
+   - Chat viewer: rendered markdown with message timestamps
+   - Drag & drop: move chats between projects
+   - Inline tag editing
+
+4. **Knowledge Graph**
+   - D3.js force-directed graph
+   - Nodes: insights, colored by category (decision/finding/preference/fact)
+   - Edges: colored by type (temporal=blue, entity=green, semantic=orange, causal=red)
+   - Click node → detail panel with content, linked chats
+   - Filter by project, edge type, importance
+   - "Why" mode: highlight causal chains
+
+5. **Inbox**
+   - Unclassified chats from `_inbox/`
+   - LLM-suggested project for each (via Ollama)
+   - One-click accept or drag to project
+   - Bulk actions: auto-classify all
+
+6. **Settings**
+   - Config editor (YAML with validation)
+   - Provider status (✅/⬚)
+   - Daemon status, backup schedule
+   - Auth management
+
+CLI:
+- [ ] `aw ui` — start web UI, open browser
+- [ ] `aw ui --port 8420` — custom port
+- [ ] `aw ui --no-open` — start without opening browser
+
+Config:
+```yaml
+ui:
+  enabled: true
+  port: 8420
+  open_browser: true
+  theme: auto                    # auto | light | dark
+```
+
+**Dependencies:**
+```toml
+[project.optional-dependencies]
+ui = ["fastapi", "uvicorn", "jinja2"]
+# Note: SPA is pre-built, no Node.js runtime dependency
+```
+
+**Tests:**
+- [ ] API serves SPA at /
+- [ ] All API endpoints accessible from UI
+- [ ] SSE stream delivers live updates
+- [ ] Graph data serialization correct for D3.js
+
+**Deliverable:** `aw ui` → browser opens → full AnticLaw management in GUI
+
+---
+
 ## Dependency Summary
 
 ### Core (always installed)
@@ -978,6 +1095,7 @@ keyring            # Secrets management
 [backup]     → google-api-python-client, boto3
 [scraper]    → playwright
 [llm]        → httpx (for Ollama API)
+[ui]         → fastapi, uvicorn, jinja2
 [dev]        → pytest, ruff, pre-commit
 [all]        → everything above
 ```
@@ -1012,5 +1130,6 @@ Ollama       → ollama.com (for embeddings + local LLM)
 | **12** | **31–35** | **Local files + HTTP API** | **`aw scan`, `aw api start`** |
 | **13** | **36–38** | **Voice input (Whisper)** | **`aw listen`** |
 | **14** | **39–42** | **Alexa integration** | **`aw tunnel start`, Alexa Skill** |
+| **15** | **43–48** | **Web UI** | **`aw ui`** |
 
-**Total: ~42 working days to v1.5**
+**Total: ~48 working days to v2.0**

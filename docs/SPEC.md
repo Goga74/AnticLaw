@@ -706,6 +706,9 @@ anticlaw/
 │   │   ├── scheduler.py         # APScheduler cron jobs
 │   │   ├── tray.py              # pystray system tray
 │   │   └── ipc.py               # Unix socket / Named pipe
+│   ├── ui/
+│   │   ├── app.py               # FastAPI mount for SPA + API routes
+│   │   └── static/              # Pre-built SPA bundle
 │   └── cli/
 │       ├── main.py              # ✅ Click CLI entry point
 │       ├── import_cmd.py        # ✅ aw import claude <zip>
@@ -723,6 +726,7 @@ anticlaw/
 │   ├── SPEC.md                  # This document
 │   ├── PLAN.md                  # Implementation plan
 │   └── PROVIDERS.md             # Provider contracts and architecture
+├── ui-src/                        # SPA source (Svelte/React, not in package)
 ├── pyproject.toml
 ├── config.example.yaml
 ├── README.md
@@ -1228,3 +1232,38 @@ User: "Alexa, ask AnticLaw to find chats about authorization"
 - Requires internet (Alexa → AWS → tunnel → local)
 - Tunnel must be running (daemon manages this)
 - Latency: ~2-4 seconds end-to-end
+
+---
+
+## 24. Web UI (v2.0+)
+
+Browser-based GUI running at localhost. Built as SPA (Single Page Application)
+on top of the HTTP API from Phase 12.
+
+**Design principles:**
+- **Zero runtime deps beyond Python.** SPA is pre-built and bundled in the package. No Node.js needed to run.
+- **API-first.** UI uses the same API endpoints as Alexa and external clients. No special backend routes.
+- **Live updates.** SSE (Server-Sent Events) from daemon: new chat indexed, backup completed, etc.
+- **Offline.** Works without internet. All assets served from localhost.
+
+**Key features:**
+
+| Feature | Description |
+|---------|-------------|
+| Unified search | All 5 tiers, visual indicator of which tier matched |
+| Graph explorer | Interactive MAGMA visualization, causal chain highlighting |
+| Chat viewer | Rendered markdown with syntax highlighting |
+| Inbox manager | LLM-suggested classification, drag & drop |
+| Project browser | Tree view, metadata editing, bulk operations |
+| Dashboard | Stats, health, recent activity, backup status |
+
+**Tech stack:**
+
+| Component | Choice | Rationale |
+|-----------|--------|-----------|
+| Frontend framework | Svelte (or React) | Small bundle, fast, reactive |
+| Graph visualization | D3.js | Industry standard, force-directed layout |
+| Markdown rendering | marked.js + highlight.js | Syntax highlighting for code blocks |
+| CSS | Tailwind | Utility-first, dark mode built-in |
+| Build | Vite | Fast builds, small output |
+| Bundled in | `src/anticlaw/ui/static/` | Pre-built, no Node.js at runtime |

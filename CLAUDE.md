@@ -66,6 +66,9 @@ src/anticlaw/
 │   ├── scheduler.py         # APScheduler cron jobs
 │   ├── tray.py              # pystray system tray
 │   └── ipc.py               # Unix socket / Named pipe
+├── ui/
+│   ├── app.py               # FastAPI mount for SPA + API routes
+│   └── static/              # Pre-built SPA bundle
 └── cli/
     ├── main.py              # ✅ Click entry point + version
     ├── import_cmd.py         # ✅ aw import claude <zip>
