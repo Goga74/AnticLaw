@@ -495,6 +495,8 @@ Merged into `~/.claude/settings.json`:
 
 ## 9. Local LLM Integration (Ollama)
 
+> **Implementation status:** Phase 7 complete ✅. Core Ollama integration is implemented in `src/anticlaw/llm/`. `--summarize`/`--autotag` flags on import are deferred to a future phase.
+
 ### Models
 
 | Purpose | Model | Size | Why |
@@ -504,24 +506,48 @@ Merged into `~/.claude/settings.json`:
 | Q&A over KB | Same as summarization | — | Reuses the same model |
 | Classification / tagging | Same as summarization | — | Reuses the same model |
 
+### Architecture
+
+All LLM operations go through `OllamaClient` (`llm/ollama_client.py`), a thin wrapper around the Ollama HTTP API at `localhost:11434`. The client provides:
+
+- `generate(prompt, model)` → response text (via `/api/generate`, non-streaming)
+- `available_models()` → list of installed model names (via `/api/tags`)
+- `is_available()` → bool (health-check before running commands)
+- Custom exceptions: `OllamaNotAvailable` (server down), `OllamaError` (API error)
+
+CLI commands check `is_available()` upfront and show a helpful error message instead of crashing.
+
 ### Operations
 
 ```bash
-# Auto-summarize a chat on import
-aw import claude export.zip --summarize
+# Summarize a specific chat or project ✅
+aw summarize <chat-id-or-project>
 
-# Summarize a specific project
-aw summarize project-alpha
-
-# Ask a question over the knowledge base
+# Ask a question over the knowledge base ✅
 aw ask "what auth approach did we choose and why?"
 
-# Auto-tag untagged chats
-aw autotag _inbox/
+# Auto-tag a chat or all chats in a project ✅
+aw autotag <chat-id-or-project>
 
-# Detect duplicates
+# Auto-summarize a chat on import (deferred)
+aw import claude export.zip --summarize
+
+# Detect duplicates (Phase 9)
 aw duplicates
 ```
+
+### Q&A Pipeline
+
+`aw ask` follows a search-then-generate pattern:
+
+1. Search the knowledge base via the 5-tier search dispatcher (same as `aw search`).
+2. Build a context string from the top results (titles + snippets), capped at `max_context_chars`.
+3. Send the question + context to Ollama via a structured prompt.
+4. Return a `QAResult` dataclass with the answer text, source `SearchResult` list, and any error.
+
+### Tag Parsing
+
+`auto_tag` uses robust parsing of LLM output — handles comma-separated, newline-separated, bulleted, quoted, and bracketed formats. Tags are lowercased, deduplicated, and validated against `^[a-z0-9][a-z0-9_-]*$`.
 
 ---
 
@@ -561,9 +587,9 @@ aw search --project alpha "tokens"    # Scope to project
 aw search --tag security "auth"       # Filter by tag
 aw search --max-results 10 "auth"     # Limit results
 aw search --max-tokens 2000 "auth"    # Token-budgeted search (planned)
-aw related <node-id>                  # Graph traversal (planned)
-aw why "chose SQLite"                 # Causal chain lookup (planned)
-aw timeline project-alpha             # Chronological view (planned)
+aw related <node-id>                  # Graph traversal ✅
+aw why "chose SQLite"                 # Causal chain lookup ✅
+aw timeline project-alpha             # Chronological view ✅
 ```
 
 ### Knowledge Management (AnticLaw)
@@ -572,8 +598,9 @@ aw timeline project-alpha             # Chronological view (planned)
 aw inbox                              # Show unprocessed chats with suggestions
 aw stale                              # Projects with no activity >N days
 aw duplicates                         # Detect similar/duplicate chats
-aw summarize <project>                # Generate/update project summary
-aw autotag <chat-or-project>          # Auto-generate tags via LLM
+aw summarize <chat-or-project>        # Generate/update summary via Ollama ✅
+aw autotag <chat-or-project>          # Auto-generate tags via Ollama ✅
+aw ask "question"                     # Q&A over knowledge base via Ollama ✅
 aw stats                              # Global KB statistics
 aw health                             # Check for issues (orphans, missing meta, etc.)
 ```
