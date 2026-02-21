@@ -669,10 +669,10 @@ anticlaw/
 │   │   ├── config.py            # ✅ Config loader with defaults, ACL_HOME resolution
 │   │   ├── fileutil.py          # ✅ Atomic writes, safe names, locking, permissions
 │   │   ├── meta_db.py           # ✅ SQLite WAL + FTS5 metadata index (MetaDB)
-│   │   ├── search.py            # ✅ Tier 1 keyword search dispatcher
-│   │   ├── index.py             # ChromaDB vector indexing
+│   │   ├── search.py            # ✅ 5-tier search dispatcher (keyword/BM25/fuzzy/semantic/hybrid)
+│   │   ├── index.py             # ✅ ChromaDB vector indexing (VectorIndex)
 │   │   ├── graph.py             # MAGMA 4-graph (SQLite)
-│   │   ├── embeddings.py        # Ollama embedding provider
+│   │   ├── embeddings.py        # (unused — embedding providers in providers/embedding/)
 │   │   └── retention.py         # 3-zone lifecycle
 │   ├── mcp/
 │   │   ├── server.py            # ✅ FastMCP server — 13 tool definitions
@@ -693,8 +693,8 @@ anticlaw/
 │   │   │   ├── s3.py            # boto3 (AWS/MinIO/B2/R2)
 │   │   │   └── rsync.py         # shells out to rsync
 │   │   └── embedding/
-│   │       ├── base.py          # EmbeddingProvider Protocol
-│   │       ├── ollama.py        # nomic-embed-text (768-dim)
+│   │       ├── base.py          # ✅ EmbeddingProvider Protocol + EmbeddingInfo
+│   │       ├── ollama.py        # ✅ OllamaEmbeddingProvider (nomic-embed-text, 768-dim)
 │   │       └── local_model.py   # model2vec/fastembed (256-dim)
 │   ├── llm/
 │   │   ├── summarizer.py        # Summarization via Ollama
@@ -918,15 +918,15 @@ When enabled:
 - [x] CLI: `aw import claude`
 - [x] CLI: `aw list`, `aw show`, `aw move`, `aw tag`, `aw create project`, `aw reindex`
 
-### v0.2 — Search (1 week)
+### v0.2 — Search (1 week) ✅
 
 - [x] Tier 1: keyword search (SQLite FTS5 with BM25 ranking)
-- [ ] Tier 2: BM25 (bm25s)
-- [ ] Tier 3: fuzzy (rapidfuzz)
-- [ ] Tier 4: semantic (Ollama + ChromaDB)
-- [ ] Tier 5: hybrid fusion
+- [x] Tier 2: BM25 (bm25s)
+- [x] Tier 3: fuzzy (rapidfuzz)
+- [x] Tier 4: semantic (Ollama + ChromaDB)
+- [x] Tier 5: hybrid fusion
 - [x] CLI: `aw search` with --project, --tag, --exact, --max-results
-- [ ] Indexing pipeline: auto-index on import
+- [ ] Indexing pipeline: auto-index on import (deferred to daemon phase)
 
 ### v0.3 — MCP Server (1 week) ✅
 

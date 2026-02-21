@@ -412,7 +412,7 @@ Goal: Claude Code can search and save to AnticLaw.
 
 ---
 
-### Phase 5: Advanced Search — Tiers 2–5 (Days 12–14)
+### Phase 5: Advanced Search — Tiers 2–5 (Days 12–14) ✅
 
 ```
 Goal: BM25, fuzzy, semantic, hybrid search.
@@ -421,32 +421,41 @@ Goal: BM25, fuzzy, semantic, hybrid search.
 **Files:**
 
 `src/anticlaw/core/search.py` (extend):
-- [ ] Tier 2: `search_bm25(query)` — via bm25s library
-- [ ] Tier 3: `search_fuzzy(query)` — via rapidfuzz
-- [ ] Tier 4: `search_semantic(query)` — via ChromaDB + Ollama embeddings
-- [ ] Tier 5: `search_hybrid(query, alpha)` — BM25 + semantic fusion
-- [ ] Auto-tier selection based on installed deps
-- [ ] `max_tokens` parameter for budget control
+- [x] Tier 2: `search_bm25(query)` — via bm25s library
+- [x] Tier 3: `search_fuzzy(query)` — via rapidfuzz
+- [x] Tier 4: `search_semantic(query)` — via ChromaDB + Ollama embeddings
+- [x] Tier 5: `search_hybrid(query, alpha)` — BM25 + semantic fusion
+- [x] Auto-tier selection based on installed deps
+- [ ] `max_tokens` parameter for budget control (deferred)
 
-`src/anticlaw/core/embeddings.py`:
-- [ ] `OllamaEmbedder`: calls Ollama API for nomic-embed-text
-- [ ] `embed_text(text) → list[float]`
-- [ ] `embed_batch(texts) → list[list[float]]`
-- [ ] Embedding cache via `diskcache`
+`src/anticlaw/providers/embedding/base.py` (was `core/embeddings.py`):
+- [x] `EmbeddingProvider` Protocol (`@runtime_checkable`)
+- [x] `EmbeddingInfo` dataclass (name, dimensions, provider)
+
+`src/anticlaw/providers/embedding/ollama.py`:
+- [x] `OllamaEmbeddingProvider`: calls Ollama API for nomic-embed-text via httpx
+- [x] `embed(text) → list[float]`
+- [x] `embed_batch(texts) → list[list[float]]`
+- [ ] Embedding cache via `diskcache` (deferred)
 
 `src/anticlaw/core/index.py`:
-- [ ] ChromaDB collection management
-- [ ] `index_chat_vectors(chat)` — embed all messages, store in ChromaDB
-- [ ] `index_insight_vectors(insight)` — embed insight text
-- [ ] `reindex_vectors(home)` — full re-embedding
+- [x] `VectorIndex` class: ChromaDB persistent client, `chats` + `insights` collections
+- [x] `index_chat_vectors(chat)` — embed all messages, store in ChromaDB
+- [x] `index_insight_vectors(insight)` — embed insight text
+- [x] `reindex_vectors(home)` — full re-embedding from MetaDB
 
-**Tests:**
-- [ ] Each tier returns ranked results
-- [ ] Graceful degradation: missing dep → falls back to lower tier
-- [ ] Hybrid fusion produces better ranking than either alone
-- [ ] Token budget respected
+> **Divergence from plan:** Embedding providers implemented in `providers/embedding/` (following provider family architecture from PROVIDERS.md) instead of `core/embeddings.py`. `OllamaEmbeddingProvider` uses `httpx` for Ollama API calls. `diskcache` embedding cache deferred. `max_tokens` token budget deferred. `VectorIndex` class manages ChromaDB `PersistentClient` with separate `chats` and `insights` collections using cosine distance. Helper functions `index_chat_vectors()`, `index_insight_vectors()`, `reindex_vectors()` compose embedder + index operations.
 
-**Deliverable:** `aw search "database choice"` finds "Decided on SQLite for graph storage" via semantic search
+**Tests (65 new, 266 total):**
+- [x] Each tier returns ranked results
+- [x] Graceful degradation: missing dep → falls back to lower tier
+- [x] Hybrid fusion produces better ranking than either alone
+- [x] BM25, fuzzy, semantic, hybrid tier-specific tests
+- [x] EmbeddingProvider Protocol tests + OllamaEmbeddingProvider mock tests
+- [x] VectorIndex: index_chat, index_insight, search, clear, reindex
+- [ ] Token budget respected (deferred with max_tokens)
+
+**Deliverable:** `aw search "database choice"` finds semantic matches via 5-tier search ✅
 
 ---
 
