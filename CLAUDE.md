@@ -58,9 +58,11 @@ src/anticlaw/
 │       ├── ollama.py        # ✅ OllamaEmbeddingProvider (nomic-embed-text, 768-dim)
 │       └── local_model.py   # model2vec/fastembed (256-dim)
 ├── llm/
-│   ├── summarizer.py
-│   ├── tagger.py
-│   └── qa.py
+│   ├── __init__.py           # ✅ Package init
+│   ├── ollama_client.py      # ✅ OllamaClient: generate(), available_models(), is_available()
+│   ├── summarizer.py         # ✅ summarize_chat, summarize_project via Ollama
+│   ├── tagger.py             # ✅ auto_tag, auto_categorize via Ollama
+│   └── qa.py                 # ✅ ask() — search KB + LLM answer with references
 ├── daemon/
 │   ├── watcher.py           # watchdog file monitor
 │   ├── scheduler.py         # APScheduler cron jobs
@@ -75,6 +77,7 @@ src/anticlaw/
     ├── search_cmd.py         # ✅ aw search <query> with filters
     ├── project_cmd.py        # ✅ aw list, show, move, tag, create, reindex
     ├── graph_cmd.py           # ✅ aw related, aw why, aw timeline
+    ├── llm_cmd.py             # ✅ aw summarize, aw autotag, aw ask
     ├── knowledge_cmd.py      # aw inbox, stale, duplicates ...
     ├── provider_cmd.py       # aw providers ...
     ├── daemon_cmd.py         # aw daemon ...
@@ -151,7 +154,7 @@ There are three main approaches...
 
 ## Current Phase
 
-Phase 6 complete. Next: Phase 7 (Local LLM Integration).
+Phase 7 complete. Next: Phase 8 (Daemon + File Watcher).
 
 ### Completed
 - **Phase 0:** Scaffolding — pyproject.toml, directory structure, `aw --version` ✅
@@ -161,9 +164,10 @@ Phase 6 complete. Next: Phase 7 (Local LLM Integration).
 - **Phase 4:** MCP server — FastMCP with 13 tools, context-store with 6 chunking strategies, TurnTracker, `aw mcp start/install` ✅
 - **Phase 5:** Advanced search — Tiers 2-5 (BM25 via bm25s, fuzzy via rapidfuzz, semantic via ChromaDB+Ollama embeddings, hybrid fusion), EmbeddingProvider Protocol, OllamaEmbeddingProvider, VectorIndex, auto-tier selection, graceful degradation ✅
 - **Phase 6:** Knowledge graph — MAGMA 4-graph (GraphDB with temporal/entity/semantic/causal edges), regex entity extractor, intent detection, auto-edge generation on remember, `aw related/why/timeline`, real `aw_related`/`aw_graph_stats` MCP tools ✅
+- **Phase 7:** Local LLM integration — OllamaClient (HTTP API wrapper, graceful fallback), summarizer (chat + project), tagger (auto_tag + auto_categorize), Q&A (search + LLM answer with references), CLI: `aw summarize`, `aw autotag`, `aw ask` ✅
 
 ### Test coverage
-333 unit tests passing (models, fileutil, storage, config, registry, claude provider, import CLI, meta_db, search, search CLI, project CLI, context store, hooks, MCP tools, MCP CLI, embedding provider, vector index, advanced search tiers, fallback behavior, entities, graph, graph CLI).
+395 unit tests passing (models, fileutil, storage, config, registry, claude provider, import CLI, meta_db, search, search CLI, project CLI, context store, hooks, MCP tools, MCP CLI, embedding provider, vector index, advanced search tiers, fallback behavior, entities, graph, graph CLI, ollama client, summarizer, tagger, Q&A, LLM CLI).
 
 ## Specs
 

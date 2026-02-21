@@ -950,12 +950,12 @@ When enabled:
 - [x] Intent-aware recall (why/when/what)
 - [x] CLI: `aw related`, `aw why`, `aw timeline`
 
-### v0.5 — Local LLM (1 week)
+### v0.5 — Local LLM (1 week) ✅
 
-- [ ] Ollama integration: summarizer, tagger, Q&A
-- [ ] Auto-summarize on import
-- [ ] Auto-tag on import
-- [ ] CLI: `aw summarize`, `aw autotag`, `aw ask`
+- [x] Ollama integration: OllamaClient, summarizer, tagger, Q&A
+- [ ] Auto-summarize on import (deferred)
+- [ ] Auto-tag on import (deferred)
+- [x] CLI: `aw summarize`, `aw autotag`, `aw ask`
 
 ### v0.6 — AnticLaw (1 week)
 

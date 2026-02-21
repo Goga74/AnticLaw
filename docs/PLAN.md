@@ -514,7 +514,7 @@ Update MCP server:
 
 ---
 
-### Phase 7: Local LLM Integration (Days 18–19)
+### Phase 7: Local LLM Integration (Days 18–19) ✅
 
 ```
 Goal: Summarization, auto-tagging, Q&A via Ollama.
@@ -523,36 +523,41 @@ Goal: Summarization, auto-tagging, Q&A via Ollama.
 **Files:**
 
 `src/anticlaw/llm/ollama_client.py`:
-- [ ] `OllamaClient`: wrapper around Ollama HTTP API (localhost:11434)
-- [ ] `generate(prompt, model)` → response text
-- [ ] `available_models()` → list of installed models
-- [ ] Error handling: Ollama not running → graceful fallback
+- [x] `OllamaClient`: wrapper around Ollama HTTP API (localhost:11434)
+- [x] `generate(prompt, model)` → response text
+- [x] `available_models()` → list of installed models
+- [x] `is_available()` → check server reachability
+- [x] Error handling: Ollama not running → graceful fallback (OllamaNotAvailable exception)
 
 `src/anticlaw/llm/summarizer.py`:
-- [ ] `summarize_chat(chat) → str` — 2-3 sentence summary
-- [ ] `summarize_project(project) → str` — project-level summary from all chats
+- [x] `summarize_chat(chat) → str` — 2-3 sentence summary
+- [x] `summarize_project(name, description, chats) → str` — project-level summary from chat summaries
 
 `src/anticlaw/llm/tagger.py`:
-- [ ] `auto_tag(chat) → list[str]` — suggest tags based on content
-- [ ] `auto_categorize(chat) → str` — suggest project for inbox chats
+- [x] `auto_tag(chat) → list[str]` — suggest tags based on content (with robust LLM output parsing)
+- [x] `auto_categorize(chat) → str` — suggest project for inbox chats
 
 `src/anticlaw/llm/qa.py`:
-- [ ] `ask(question, context_chats) → str` — Q&A over selected chats
-- [ ] Uses search to find relevant context, then sends to LLM
+- [x] `ask(question, home) → QAResult` — search KB for relevant context, send to LLM, return answer with sources
+- [x] Uses search to find relevant context, then sends to LLM
+- [x] `QAResult` dataclass with answer, sources, error fields
 
-CLI:
-- [ ] `aw summarize <project-or-chat>` — generate/update summary
-- [ ] `aw autotag <chat-or-project>` — auto-tag via LLM
-- [ ] `aw ask "question"` — Q&A over knowledge base
-- [ ] `aw import claude export.zip --summarize --autotag`
+`src/anticlaw/cli/llm_cmd.py`:
+- [x] `aw summarize <project-or-chat>` — generate/update summary (updates file + index)
+- [x] `aw autotag <chat-or-project>` — auto-tag via LLM (merges with existing tags)
+- [x] `aw ask "question"` — Q&A over knowledge base with source references
+- [ ] `aw import claude export.zip --summarize --autotag` (deferred)
 
-**Tests:**
-- [ ] Summarizer produces non-empty string
-- [ ] Auto-tag returns relevant tags
-- [ ] Q&A returns answer referencing correct chats
-- [ ] Graceful fallback when Ollama not running
+> **Divergence from plan:** `OllamaClient` has `is_available()` method for pre-flight checks. CLI commands check Ollama availability upfront and show helpful error. `_resolve_target()` handles both chat IDs (including partial prefix) and project names. `auto_tag` uses robust parsing of LLM output (handles comma-separated, bulleted, quoted, bracketed formats). `ask()` returns `QAResult` dataclass instead of plain string. `--summarize --autotag` flags on import deferred.
 
-**Deliverable:** `aw ask "what auth approach did we choose?"` → answer with references
+**Tests (62 new, 395 total):**
+- [x] OllamaClient: init, is_available, available_models, generate (14 tests)
+- [x] Summarizer: chat summary, project summary, empty inputs, graceful fallback (9 tests)
+- [x] Tagger: parse_tags (10 edge cases), auto_tag, auto_categorize, fallback (15 tests)
+- [x] Q&A: answer with sources, no DB, no results, Ollama unavailable, context limits (7 tests)
+- [x] CLI: summarize/autotag/ask for chat + project, Ollama not running, not found, help (17 tests)
+
+**Deliverable:** `aw ask "what auth approach did we choose?"` → answer with references ✅
 
 ---
 
