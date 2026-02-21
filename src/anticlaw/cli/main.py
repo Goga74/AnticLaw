@@ -4,6 +4,15 @@ import click
 
 from anticlaw import __version__
 from anticlaw.cli.import_cmd import import_group
+from anticlaw.cli.project_cmd import (
+    create_group,
+    list_cmd,
+    move_cmd,
+    reindex_cmd,
+    show_cmd,
+    tag_cmd,
+)
+from anticlaw.cli.search_cmd import search_cmd
 
 
 @click.group()
@@ -13,6 +22,13 @@ def cli() -> None:
 
 
 cli.add_command(import_group)
+cli.add_command(search_cmd)
+cli.add_command(list_cmd)
+cli.add_command(show_cmd)
+cli.add_command(move_cmd)
+cli.add_command(tag_cmd)
+cli.add_command(create_group)
+cli.add_command(reindex_cmd)
 
 
 if __name__ == "__main__":
