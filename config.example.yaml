@@ -1,0 +1,84 @@
+# AnticLaw configuration
+# Copy to ~/.acl/config.yaml and edit as needed.
+
+# Paths
+home: ~/anticlaw                       # ACL_HOME (override with ACL_HOME env var)
+
+# Search
+search:
+  alpha: 0.6                           # Hybrid blend (0=BM25, 1=semantic)
+  max_results: 20                      # Default result limit
+  default_max_tokens: 4000             # Default token budget
+
+# Embeddings
+embeddings:
+  provider: ollama                     # ollama | none
+  model: nomic-embed-text
+  dimensions: 768
+
+# Local LLM
+llm:
+  provider: ollama
+  model: llama3.1:8b                   # For summarization, Q&A, tagging
+  base_url: http://localhost:11434
+
+# Graph
+graph:
+  temporal_window_minutes: 30          # Auto-link nodes within this window
+  semantic_top_k: 3                    # Top-K similar nodes for semantic edges
+  auto_entities: true                  # Auto-extract entities on remember
+
+# Retention
+retention:
+  archive_days: 30                     # Days before archiving stale items
+  purge_days: 180                      # Days before purging archived items
+  importance_decay_days: 30            # Half-life for importance decay
+
+# Providers (secrets stored in system keyring, never here)
+providers:
+  claude:
+    enabled: true
+  chatgpt:
+    enabled: false
+  gemini:
+    enabled: false
+
+# MCP
+mcp:
+  auto_save_reminder_turns: [10, 20, 30]
+  pre_compact_block: true
+
+# Daemon
+daemon:
+  enabled: false
+  autostart: false
+
+  watch:
+    enabled: true
+    auto_index: true
+    auto_project: ask                  # ask | auto | off
+    debounce_seconds: 2
+    ignore_patterns:
+      - "*.tmp"
+      - "*.swp"
+      - ".git/*"
+
+  backup:
+    enabled: false
+    schedule: "0 3 * * *"             # cron: daily at 3 AM
+    targets: []
+
+  sync:
+    enabled: false
+    auto_push: false
+    auto_pull: false
+    providers: [claude]
+    schedule: "0 */6 * * *"
+
+  retention:
+    auto_run: false
+    schedule: "0 4 * * *"
+
+  tray:
+    enabled: true
+    show_notifications: true

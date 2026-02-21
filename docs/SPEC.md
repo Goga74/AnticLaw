@@ -1,0 +1,971 @@
+# AnticLaw — Project Specification
+
+**Version:** 0.1-draft  
+**Date:** 2025-02-20  
+**Status:** Design phase
+
+---
+
+## 1. Philosophy
+
+**AnticLaw** is a local-first knowledge base management system that treats the user's file system as the source of truth and cloud LLMs as interchangeable clients.
+
+### Core Principles
+
+1. **Files are the source of truth.** Folder = project, file = chat. Everything is readable, greppable, version-controllable with git.
+2. **LLMs are clients, not masters.** Claude, ChatGPT, Gemini, local Ollama — all are "windows" into the same knowledge base. None owns the data.
+3. **Local LLM is the administrator.** Search, summarization, classification, tagging — all run locally without sending data to the cloud.
+4. **AnticLaw = active knowledge management.** Not a dump of chats, but a living structure: tags, cross-links, auto-summaries, duplicate detection, stale project alerts.
+
+---
+
+## 2. Architecture Overview
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                   CLI (ae) / TUI / Web UI               │
+│  aw import claude export.zip                            │
+│  aw search "авторизация"                                │
+│  aw move chat-123 project-alpha                         │
+│  aw ask "what decisions did we make about auth?"        │
+├─────────────────────────────────────────────────────────┤
+│                   Core Engine (Python)                   │
+│  - Project / Chat / Message CRUD                        │
+│  - Import / Export pipeline                             │
+│  - Auto-summarize, auto-tag, auto-link                  │
+│  - Conflict resolution                                  │
+│  - Retention lifecycle (active → archive → purge)       │
+├─────────────────────────────────────────────────────────┤
+│               MCP Server (FastMCP, stdio)                │
+│  Exposes tools to Claude Code / Cursor / Codex:         │
+│  load_context, search, save, recall, related, ...       │
+├────────────────────┬────────────────────────────────────┤
+│  Local LLM         │  Vector DB + Metadata DB           │
+│  (Ollama)          │  (ChromaDB + SQLite)               │
+│  - embeddings      │  - semantic index                  │
+│  - summarization   │  - FTS5 full-text index            │
+│  - Q&A over KB     │  - MAGMA knowledge graph           │
+│  - classification  │  - metadata, tags, links           │
+├────────────────────┴────────────────────────────────────┤
+│               File System (source of truth)              │
+│  ~/anticlaw/                                         │
+│  ├── .acl/              # config, databases, index       │
+│  ├── project-alpha/    # folder = project               │
+│  │   ├── _project.yaml                                  │
+│  │   ├── 2025-02-18_auth-discussion.md                  │
+│  │   └── 2025-02-20_api-design.md                       │
+│  └── _inbox/           # unprocessed chats              │
+├─────────────────────────────────────────────────────────┤
+│               Provider Modules                           │
+│  ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌──────────┐     │
+│  │ Claude  │ │ ChatGPT │ │ Gemini  │ │  Ollama  │     │
+│  │ Provider│ │ Provider│ │ Provider│ │  Provider│     │
+│  └─────────┘ └─────────┘ └─────────┘ └──────────┘     │
+│  Each: import, export, sync, map project                │
+└─────────────────────────────────────────────────────────┘
+```
+
+---
+
+## 3. Directory Structure
+
+```
+~/anticlaw/                          # ACL_HOME (configurable)
+├── .acl/                                # Internal data (gitignored)
+│   ├── config.yaml                     # Global configuration
+│   ├── meta.db                         # SQLite: metadata, tags, links, sessions
+│   ├── graph.db                        # SQLite: MAGMA knowledge graph
+│   ├── vectors/                        # ChromaDB persistent storage
+│   └── cache/                          # Embedding cache (diskcache)
+│
+├── project-alpha/                      # Project = folder
+│   ├── _project.yaml                   # Project metadata
+│   ├── 2025-02-18_auth-discussion.md   # Chat = file
+│   ├── 2025-02-20_api-design.md
+│   └── _knowledge/                     # Project Knowledge files (optional)
+│       └── architecture.md
+│
+├── project-beta/
+│   └── ...
+│
+├── _inbox/                             # Unprocessed / uncategorized chats
+│   └── 2025-01-10_untitled.md
+│
+└── _archive/                           # Archived projects and chats
+    └── old-project/
+```
+
+---
+
+## 4. File Formats
+
+### 4.1 Chat file (Markdown + YAML frontmatter)
+
+```yaml
+# ~/anticlaw/project-alpha/2025-02-18_auth-discussion.md
+
+---
+id: "ae-20250218-001"
+title: "Auth discussion: JWT vs sessions"
+created: 2025-02-18T14:30:00Z
+updated: 2025-02-20T09:15:00Z
+provider: claude
+remote_id: "28d595a3-5db0-492d-a49a-af74f13de505"
+remote_project_id: "proj_abc123"
+model: "claude-opus-4-6"
+tags: [auth, jwt, security, api]
+summary: "Chose JWT + refresh tokens over sessions. Key reasons: stateless, scalable, mobile-friendly."
+token_count: 12450
+message_count: 24
+importance: high
+status: active          # active | archived | purged
+---
+
+## Human (14:30)
+How should we implement auth for our API?
+
+## Assistant (14:31)
+There are three main approaches...
+
+## Human (14:35)
+Let's go with JWT. What about refresh tokens?
+
+## Assistant (14:36)
+Good choice. Here's the implementation plan...
+```
+
+**Design decisions:**
+- YAML frontmatter: machine-parseable metadata, supported by Obsidian, VS Code, Hugo, etc.
+- Markdown body: human-readable, greppable, diffable.
+- Timestamp per message: enables temporal analysis.
+- `remote_id` + `provider`: bidirectional mapping to cloud LLM.
+- `summary`: auto-generated by local LLM on import, updatable.
+
+### 4.2 Project metadata (_project.yaml)
+
+```yaml
+# ~/anticlaw/project-alpha/_project.yaml
+
+name: "Project Alpha"
+description: "Main product API development"
+created: 2025-01-15T10:00:00Z
+updated: 2025-02-20T09:15:00Z
+tags: [api, backend, python]
+status: active
+
+# Provider mappings (one project can map to multiple LLMs)
+providers:
+  claude:
+    project_id: "proj_abc123"
+    project_name: "Alpha API"
+    last_sync: 2025-02-20T09:00:00Z
+  chatgpt:
+    project_id: null           # not mapped yet
+  ollama:
+    default_model: "llama3.1:8b"
+
+# Project-level settings
+settings:
+  auto_summarize: true
+  auto_tag: true
+  retention_days: 90           # override global setting
+```
+
+---
+
+## 5. Provider Modules
+
+### 5.1 Provider Interface
+
+Every provider implements one contract:
+
+```python
+from pathlib import Path
+from typing import Protocol
+from anticlaw.core.models import ChatData, RemoteProject, RemoteChat, SyncResult
+
+class LLMProvider(Protocol):
+    """Interface for LLM platform integration."""
+
+    name: str  # "claude", "chatgpt", "gemini", "ollama"
+
+    def auth(self, config: dict) -> bool:
+        """Verify credentials / connectivity."""
+        ...
+
+    def list_projects(self) -> list[RemoteProject]:
+        """List all projects on the remote platform."""
+        ...
+
+    def list_chats(self, project_id: str | None = None) -> list[RemoteChat]:
+        """List chats, optionally filtered by project."""
+        ...
+
+    def export_chat(self, chat_id: str) -> ChatData:
+        """Export a single chat with all messages."""
+        ...
+
+    def import_chat(self, project_id: str | None, chat: ChatData) -> str:
+        """Import a chat into the remote platform. Returns remote chat ID."""
+        ...
+
+    def export_all(self, output_dir: Path) -> int:
+        """Bulk export. Returns number of chats exported."""
+        ...
+
+    def sync(
+        self, local_project: Path, remote_project_id: str
+    ) -> SyncResult:
+        """Bidirectional sync between local folder and remote project."""
+        ...
+```
+
+### 5.2 Claude Provider
+
+**Import sources:**
+1. **Official export** (primary): Settings → Privacy → Export Data → ZIP with `conversations.json`. Parses JSON, maps to chat files. Project mapping obtained via Playwright (one-time scrape of sidebar structure).
+2. **Playwright scraper** (supplementary): One-time collection of project→chat mapping, Project Knowledge files, system prompts.
+
+**Export format (conversations.json):**
+```json
+[
+  {
+    "uuid": "28d595a3-...",
+    "name": "Auth Discussion",
+    "created_at": "2025-02-18T14:30:00.000Z",
+    "chat_messages": [
+      {"sender": "human", "text": "..."},
+      {"sender": "assistant", "text": "..."}
+    ]
+  }
+]
+```
+
+**Known limitations:**
+- Project membership (chat→project link) may not be in export — requires Playwright supplement.
+- Project Knowledge files not exported — requires Playwright.
+- Deleted chats not included.
+
+### 5.3 ChatGPT Provider
+
+**Import source:** Settings → Data controls → Export data → ZIP with `conversations.json`.
+
+Different JSON schema from Claude — separate parser needed. Same output: `.md` files with YAML frontmatter.
+
+### 5.4 Gemini Provider
+
+**Import source:** Google Takeout → Gemini data.
+
+Lower priority. Placeholder for v0.4+.
+
+### 5.5 Ollama Provider
+
+Special case — not a cloud platform. Functions:
+- `import_chat`: Load a chat file as context for local Q&A session.
+- `export_chat`: Save local Ollama session as a chat file.
+- `ask`: Q&A over the knowledge base using local LLM.
+- `summarize`: Generate summary for a chat or project.
+
+---
+
+## 6. Search System (5-Tier)
+
+Inspired by MemCP's tiered search architecture. Single entry point (`aw search`), auto-selects best available tier. Graceful degradation: works with zero optional deps (Tier 1), each extra unlocks better search.
+
+```
+Query → Tier 5 (hybrid) if available
+       → Tier 4 (semantic) if embeddings available
+       → Tier 3 (fuzzy) if rapidfuzz installed
+       → Tier 2 (BM25) if bm25s installed
+       → Tier 1 (keyword) always available
+```
+
+### Tier 1: Keyword (stdlib)
+
+- **How:** Substring / regex matching.
+- **Deps:** None (Python stdlib).
+- **When:** Always available as fallback.
+- **Limitation:** Case-sensitive by default, no ranking.
+
+### Tier 2: BM25 (bm25s)
+
+- **How:** TF-IDF-based ranked search. Rare terms weighted higher.
+- **Deps:** `bm25s` (~5 MB).
+- **When:** `pip install anticlaw[search]`.
+- **Strength:** Good ranking for keyword queries.
+
+### Tier 3: Fuzzy (rapidfuzz)
+
+- **How:** Levenshtein distance. Tolerates typos.
+- **Deps:** `rapidfuzz` (~2 MB).
+- **When:** `pip install anticlaw[fuzzy]`.
+- **Strength:** "autentication" → finds "authentication".
+
+### Tier 4: Semantic (embeddings)
+
+- **How:** Vector embeddings via Ollama + nomic-embed-text. Cosine similarity.
+- **Deps:** `numpy` + running Ollama with `nomic-embed-text` model.
+- **When:** `pip install anticlaw[semantic]` + `ollama pull nomic-embed-text`.
+- **Strength:** "why did we pick a database?" → finds "Decided on SQLite for graph storage".
+- **Storage:** ChromaDB for vector persistence.
+
+### Tier 5: Hybrid Fusion
+
+- **How:** Combines BM25 score + semantic score.
+- **Formula:** `score = α × semantic + (1-α) × BM25`, where `α` defaults to 0.6.
+- **Deps:** All of the above.
+- **Config:** `ACL_SEARCH_ALPHA=0.6` in config.yaml.
+
+### Search scope
+
+Searches across:
+- Chat content (messages).
+- Chat metadata (title, tags, summary).
+- Project metadata (name, description, tags).
+- Knowledge graph insights.
+
+### Token budgeting
+
+`aw search --max-tokens 2000 "auth"` — caps total output to fit within a context window. Critical for MCP tool usage.
+
+---
+
+## 7. Knowledge Graph (MAGMA)
+
+Based on MAGMA (Multi-Agent Graph Memory Architecture). SQLite-backed graph with 4 edge types.
+
+### Nodes
+
+Every chat summary, key decision, or explicitly saved insight becomes a node:
+
+```
+Node {
+    id: UUID
+    content: str               # The insight text
+    category: str              # decision | finding | preference | fact | question
+    importance: str            # low | medium | high | critical
+    tags: list[str]
+    project_id: str            # Link to project
+    chat_id: str | None        # Link to source chat
+    created: datetime
+    updated: datetime
+    status: str                # active | archived | purged
+}
+```
+
+### 4 Edge Types
+
+#### 1. Temporal edges
+
+Auto-generated between nodes created within a configurable time window (default: 30 min).
+
+```
+Node A (14:00) ──temporal──► Node B (14:25)
+```
+
+**Query intent detection:** "when", "когда", "timeline", "sequence" → prioritize temporal traversal.
+
+#### 2. Entity edges
+
+Auto-extracted entities (files, modules, URLs, CamelCase names, technical terms) link nodes that mention the same entity.
+
+```
+Node "Use SQLite for graph" ──entity:SQLite──► Node "SQLite WAL mode for concurrency"
+```
+
+**Extraction methods:**
+- Regex-based (fast, always available): file paths, URLs, CamelCase identifiers.
+- LLM-based (optional, via Ollama): complex entity extraction.
+
+#### 3. Semantic edges
+
+On node creation: compute embedding → find top-3 most similar existing nodes → create weighted edges.
+
+```
+Node "Chose SQLite for storage" ──semantic(0.87)──► Node "Database should be embedded"
+```
+
+**Requires:** Ollama + nomic-embed-text.
+
+#### 4. Causal edges
+
+Detected by keywords: "because", "therefore", "fixed by", "caused by", "решили потому что", "из-за", "в результате".
+
+```
+Node "Found race condition in writer" ──causal──► Node "Fixed with flock"
+```
+
+**Query intent detection:** "why", "почему", "reason", "cause" → prioritize causal traversal.
+
+### Graph operations
+
+| Operation | Description |
+|-----------|-------------|
+| `aw related <node-id>` | Traverse from a node, filter by edge type |
+| `aw graph-stats` | Node count, edge counts by type, top entities |
+| `aw graph-viz` | Export to Mermaid / DOT for visualization |
+| `aw why "decision X"` | Shortcut: causal traversal from matching nodes |
+| `aw timeline project-alpha` | Temporal traversal of all project nodes |
+
+---
+
+## 8. MCP Server
+
+FastMCP-based stdio server. Connects to Claude Code, Cursor, Codex — any MCP-compatible client. All clients share the same knowledge base.
+
+### Registration
+
+```bash
+# Claude Code
+aw mcp install claude-code          # writes to ~/.claude/mcp_servers.json
+
+# Cursor
+aw mcp install cursor               # writes to ~/.cursor/mcp.json
+
+# Manual
+claude mcp add anticlaw -s user -- python -m anticlaw.mcp
+```
+
+### Tool Catalog (13 tools)
+
+Inspired by MemCP, but adapted for AnticLaw's project-centric model.
+
+#### Core Memory (4 tools)
+
+| # | Tool | Description |
+|---|------|-------------|
+| 1 | `aw_ping` | Health check. Returns server status, project count, insight count. |
+| 2 | `aw_remember` | Save an insight: text + category + importance + tags + project_id. Creates graph node + auto-edges. **Tool description includes: "You MUST call this before ending any session where you made decisions or learned something."** |
+| 3 | `aw_recall` | Retrieve insights. Filters: query, project, category, importance, max_tokens. Intent-aware: "why X?" follows causal edges. |
+| 4 | `aw_forget` | Remove an insight by ID. |
+
+#### Context Management (5 tools)
+
+| # | Tool | Description |
+|---|------|-------------|
+| 5 | `aw_load_context` | Store large content as named variable on disk. Claude sees only metadata (name, type, size, token count). |
+| 6 | `aw_inspect_context` | Show metadata + preview of a stored context without loading it. |
+| 7 | `aw_get_context` | Read stored context content, or a specific line range. |
+| 8 | `aw_chunk_context` | Split context into numbered chunks. Strategies: auto, lines, paragraphs, headings, chars, regex. |
+| 9 | `aw_peek_chunk` | Read a specific chunk by number. |
+
+#### Search (1 tool)
+
+| # | Tool | Description |
+|---|------|-------------|
+| 10 | `aw_search` | Unified search across all chats, insights, and contexts. Auto-selects best tier. `max_tokens` parameter for budget control. |
+
+#### Graph (2 tools)
+
+| # | Tool | Description |
+|---|------|-------------|
+| 11 | `aw_related` | Traverse graph from an insight. Filter by edge type (semantic / temporal / causal / entity). |
+| 12 | `aw_graph_stats` | Graph statistics: node count, edge counts by type, top entities, project distribution. |
+
+#### Project (1 tool)
+
+| # | Tool | Description |
+|---|------|-------------|
+| 13 | `aw_projects` | List all projects with insight count, chat count, last activity. |
+
+### Hooks
+
+Merged into `~/.claude/settings.json`:
+
+| Hook | Trigger | Behavior |
+|------|---------|----------|
+| PreCompact | Before `/compact` | Blocks until agent calls `aw_remember` to save context. |
+| AutoReminder | Every 10/20/30 turns | Progressive reminders: "Consider saving context" → "You should save now" → "SAVE REQUIRED". |
+| PostSave | After `aw_remember` | Resets turn counter. |
+
+---
+
+## 9. Local LLM Integration (Ollama)
+
+### Models
+
+| Purpose | Model | Size | Why |
+|---------|-------|------|-----|
+| Embeddings | `nomic-embed-text` | ~275 MB | 768-dim, excellent quality, local, fast |
+| Summarization | `llama3.1:8b` or `qwen2.5:7b` | ~4.7 GB | Good balance of quality and speed |
+| Q&A over KB | Same as summarization | — | Reuses the same model |
+| Classification / tagging | Same as summarization | — | Reuses the same model |
+
+### Operations
+
+```bash
+# Auto-summarize a chat on import
+aw import claude export.zip --summarize
+
+# Summarize a specific project
+aw summarize project-alpha
+
+# Ask a question over the knowledge base
+aw ask "what auth approach did we choose and why?"
+
+# Auto-tag untagged chats
+aw autotag _inbox/
+
+# Detect duplicates
+aw duplicates
+```
+
+---
+
+## 10. CLI Reference (aw)
+
+### Import / Export
+
+```bash
+aw import claude <export.zip>          # Import from Claude.ai export
+aw import chatgpt <export.zip>        # Import from ChatGPT export
+aw import file <path.md>              # Import a standalone markdown file
+aw export project-alpha --format json # Export project as JSON
+aw export --all --format zip          # Export entire KB
+```
+
+### Project Management
+
+```bash
+aw list                               # List all projects
+aw list project-alpha                 # List chats in a project
+aw show <chat-id>                     # Display a chat
+aw create project "New Project"       # Create a new project
+aw move <chat-id> <project>           # Move chat between projects
+aw rename <chat-id> "New title"       # Rename a chat
+aw tag <chat-id> auth security        # Add tags
+aw untag <chat-id> security           # Remove tag
+aw link <chat-A> <chat-B>            # Create cross-reference
+```
+
+### Search & Discovery
+
+```bash
+aw search "авторизация"               # Semantic + keyword search
+aw search --exact "JWT"               # Keyword only
+aw search --project alpha "tokens"    # Scope to project
+aw search --max-tokens 2000 "auth"    # Token-budgeted search
+aw related <node-id>                  # Graph traversal
+aw why "chose SQLite"                 # Causal chain lookup
+aw timeline project-alpha             # Chronological view
+```
+
+### Knowledge Management (AnticLaw)
+
+```bash
+aw inbox                              # Show unprocessed chats with suggestions
+aw stale                              # Projects with no activity >N days
+aw duplicates                         # Detect similar/duplicate chats
+aw summarize <project>                # Generate/update project summary
+aw autotag <chat-or-project>          # Auto-generate tags via LLM
+aw stats                              # Global KB statistics
+aw health                             # Check for issues (orphans, missing meta, etc.)
+```
+
+### MCP Server
+
+```bash
+aw mcp start                          # Start MCP server (stdio)
+aw mcp install claude-code            # Register with Claude Code
+aw mcp install cursor                 # Register with Cursor
+```
+
+### Provider Sync
+
+```bash
+aw sync claude                        # Sync with Claude.ai
+aw sync chatgpt                       # Sync with ChatGPT
+aw providers                          # List configured providers
+```
+
+---
+
+## 11. Retention Lifecycle
+
+Three-zone model (inspired by MemCP):
+
+```
+┌──────────┐    30 days    ┌──────────┐    180 days    ┌──────────┐
+│  Active  │──────────────►│ Archive  │───────────────►│  Purge   │
+│          │               │(compress)│                │ (logged) │
+└──────────┘               └──────────┘                └──────────┘
+      ▲                         │
+      │     aw restore          │
+      └─────────────────────────┘
+```
+
+- **Active:** Full content, indexed, searchable.
+- **Archive:** Moved to `_archive/`, summary retained, full text compressed. Still searchable by metadata.
+- **Purge:** Deleted. Deletion logged in `meta.db` for audit trail.
+
+Configurable per-project via `_project.yaml` → `retention_days`.
+
+```bash
+aw retention preview                  # Dry-run: what would be archived/purged
+aw retention run                      # Execute retention
+aw restore <chat-id>                  # Restore from archive
+```
+
+---
+
+## 12. Tech Stack
+
+| Component | Choice | Rationale |
+|-----------|--------|-----------|
+| Language | Python 3.10+ | Ecosystem, LLM tooling, FastMCP SDK |
+| MCP Framework | FastMCP | Official Python MCP framework |
+| Metadata DB | SQLite (WAL mode) | Zero-config, ACID, local, fast |
+| Full-text search | SQLite FTS5 | Built into SQLite, no extra deps |
+| Vector DB | ChromaDB | pip install, zero-config, persistent |
+| Embeddings | Ollama + nomic-embed-text | Local, free, 768-dim, high quality |
+| Local LLM | Ollama + llama3.1:8b | Summarization, Q&A, tagging |
+| BM25 search | bm25s | Lightweight ranked search |
+| Fuzzy search | rapidfuzz | Typo tolerance |
+| CLI framework | Click | Standard, well-documented |
+| Config format | YAML | Human-readable, widely supported |
+| Chat format | Markdown + YAML frontmatter | Readable, Obsidian-compatible, greppable |
+| Browser automation | Playwright (optional) | One-time scraping of Claude/ChatGPT structure |
+
+### Optional dependency tiers
+
+```bash
+pip install anticlaw                       # Core: keyword search, file management
+pip install anticlaw[search]               # + BM25 ranked search (~5 MB)
+pip install anticlaw[search,fuzzy]         # + typo tolerance (~7 MB)
+pip install anticlaw[search,semantic]      # + vector embeddings (~40 MB)
+pip install anticlaw[all]                  # Everything
+pip install anticlaw[scraper]              # + Playwright for one-time import
+```
+
+---
+
+## 13. Project Structure (Source Code)
+
+```
+anticlaw/
+├── src/anticlaw/
+│   ├── __init__.py
+│   ├── core/
+│   │   ├── models.py            # Project, Chat, Message, Insight, Edge
+│   │   ├── storage.py           # File system operations (CRUD)
+│   │   ├── index.py             # ChromaDB + FTS5 indexing
+│   │   ├── graph.py             # MAGMA 4-graph (SQLite)
+│   │   ├── search.py            # 5-tier search engine
+│   │   ├── embeddings.py        # Ollama embedding provider
+│   │   ├── retention.py         # 3-zone lifecycle
+│   │   └── fileutil.py          # Atomic writes, safe names, locking
+│   ├── mcp/
+│   │   ├── server.py            # FastMCP server — 13 tool definitions
+│   │   └── hooks.py             # PreCompact, AutoReminder, PostSave
+│   ├── providers/
+│   │   ├── base.py              # LLMProvider Protocol
+│   │   ├── claude.py            # Claude.ai import/export
+│   │   ├── chatgpt.py           # ChatGPT import/export
+│   │   ├── gemini.py            # Gemini import (placeholder)
+│   │   └── ollama.py            # Local LLM operations
+│   ├── llm/
+│   │   ├── summarizer.py        # Summarization via Ollama
+│   │   ├── tagger.py            # Auto-tagging via Ollama
+│   │   └── qa.py                # Q&A over knowledge base
+│   └── cli/
+│       ├── main.py              # Click CLI entry point
+│       ├── import_cmd.py        # aw import ...
+│       ├── search_cmd.py        # aw search ...
+│       ├── project_cmd.py       # aw list, move, create ...
+│       ├── knowledge_cmd.py     # aw inbox, stale, duplicates ...
+│       └── mcp_cmd.py           # aw mcp ...
+├── agents/                      # MCP agent templates for Claude Code
+│   └── anticlaw.md           # Deployed to ~/.claude/agents/
+├── templates/
+│   └── CLAUDE.md                # Session instructions for Claude Code
+├── tests/
+│   ├── unit/
+│   └── integration/
+├── docs/
+│   ├── ARCHITECTURE.md
+│   ├── TOOLS.md                 # MCP tool reference
+│   ├── SEARCH.md                # Search system details
+│   ├── GRAPH.md                 # MAGMA graph details
+│   └── PROVIDERS.md             # Provider implementation guide
+├── scripts/
+│   ├── install.sh
+│   └── uninstall.sh
+├── pyproject.toml
+├── config.example.yaml
+├── README.md
+├── SPEC.md                      # This document
+├── CHANGELOG.md
+└── LICENSE                      # MIT
+```
+
+---
+
+## 14. Configuration (config.yaml)
+
+```yaml
+# ~/anticlaw/.acl/config.yaml
+
+# Paths
+home: ~/anticlaw                    # ACL_HOME
+
+# Search
+search:
+  alpha: 0.6                           # Hybrid blend (0=BM25, 1=semantic)
+  max_results: 20                      # Default result limit
+  default_max_tokens: 4000             # Default token budget
+
+# Embeddings
+embeddings:
+  provider: ollama                     # ollama | none
+  model: nomic-embed-text
+  dimensions: 768
+
+# Local LLM
+llm:
+  provider: ollama
+  model: llama3.1:8b                   # For summarization, Q&A, tagging
+  base_url: http://localhost:11434
+
+# Graph
+graph:
+  temporal_window_minutes: 30          # Auto-link nodes within this window
+  semantic_top_k: 3                    # Top-K similar nodes for semantic edges
+  auto_entities: true                  # Auto-extract entities on remember
+
+# Retention
+retention:
+  archive_days: 30                     # Days before archiving stale items
+  purge_days: 180                      # Days before purging archived items
+  importance_decay_days: 30            # Half-life for importance decay
+
+# Providers
+providers:
+  claude:
+    enabled: true
+  chatgpt:
+    enabled: false
+  gemini:
+    enabled: false
+
+# MCP
+mcp:
+  auto_save_reminder_turns: [10, 20, 30]  # Reminder intervals
+  pre_compact_block: true                  # Block /compact until saved
+```
+
+---
+
+## 15. Security
+
+### 15.1 Threat Model
+
+| Data | Sensitivity | Risk |
+|------|-------------|------|
+| Chat texts | **High** — may contain API keys, passwords, business logic, personal data | Leak on disk compromise |
+| Embeddings | **Medium** — cannot reconstruct source text, but topic inference possible | Partial leak via similarity attack |
+| Metadata (tags, dates, project names) | **Low** — but reveals work structure | Activity profiling |
+| config.yaml | **High** — may contain provider tokens if misconfigured | Cloud account compromise |
+| SQLite databases (meta.db, graph.db) | **High** — contains indexed chat content | Same as chat texts |
+
+### 15.2 File System Permissions
+
+```python
+# Applied on: init, import, every write operation
+FILE_MODE = 0o600    # Owner read/write only
+DIR_MODE  = 0o700    # Owner read/write/execute only
+```
+
+**Windows:** NTFS ACLs set via `icacls` — restrict to current user only. Documented in installation guide.
+
+### 15.3 Secrets Management
+
+API tokens and credentials are **never** stored in `config.yaml`.
+
+```yaml
+# config.yaml — stores only the reference
+providers:
+  claude:
+    enabled: true
+    credential: keyring          # actual token in system keyring
+
+# Supported backends (via 'keyring' Python library):
+# - macOS: Keychain
+# - Windows: Credential Manager
+# - Linux: Secret Service (GNOME Keyring / KDE Wallet)
+```
+
+```bash
+# Set a provider token
+aw auth claude                   # interactive prompt, stores in system keyring
+
+# Verify
+aw auth status                   # shows which providers are configured (no secrets printed)
+```
+
+### 15.4 Content Scrubbing
+
+Auto-detection and redaction of secrets during import:
+
+```bash
+aw import claude export.zip --scrub    # strip secrets before writing .md files
+```
+
+**Detected patterns:**
+- API keys: `sk-*`, `Bearer *`, `ghp_*`, `gho_*`, `AKIA*`
+- Passwords: `password=*`, `passwd:*`
+- Connection strings: `postgres://*:*@*`, `mysql://*:*@*`
+- Private keys: `-----BEGIN * PRIVATE KEY-----`
+- Tokens: `token=*`, `secret=*`
+
+Replaced with: `[REDACTED:api_key]`, `[REDACTED:password]`, etc. Original value never written to disk.
+
+### 15.5 Git Safety
+
+Auto-generated `.gitignore` at `~/anticlaw/.gitignore`:
+
+```gitignore
+# AnticLaw internal data — NEVER commit
+.acl/meta.db
+.acl/graph.db
+.acl/vectors/
+.acl/cache/
+.acl/config.yaml
+
+# Chat files are OK to commit (if desired), but review first
+# Consider: git-crypt or age encryption for sensitive projects
+```
+
+**Pre-commit hook** (optional, installed via `aw init --git-hooks`):
+- Scans staged `.md` files for API keys / tokens / passwords.
+- Blocks commit if secrets detected.
+- Suggests `aw scrub <file>` to clean.
+
+### 15.6 Encryption at Rest (v1.0+)
+
+Optional. For users with elevated security requirements.
+
+```yaml
+# config.yaml
+security:
+  encryption: none               # none | age | gpg
+  encryption_recipient: "age1..."  # age public key (if encryption=age)
+```
+
+When enabled:
+- `.md` files stored encrypted on disk.
+- Decrypted only in memory for indexing / search.
+- Embeddings stored in ChromaDB (not reversible to original text).
+- `aw show <chat>` decrypts on the fly.
+
+### 15.7 MCP Server Isolation
+
+- **Transport:** stdio only — no HTTP endpoint, no network exposure.
+- **Scope:** Tools cannot access files outside `ACL_HOME` directory.
+- **No elevation:** Runs as current user, no privileged operations.
+- **Read-only for agents:** `aw_remember` and `aw_search` cannot modify existing chat files — only add new insights to graph.db.
+
+### 15.8 Platform-Specific Notes
+
+| Platform | Issue | Mitigation |
+|----------|-------|-----------|
+| **Windows** | Default file permissions 0o666 | Explicit `icacls` on every write |
+| **Windows** | Antivirus may lock SQLite WAL files | Document: add `~/anticlaw/` to AV exclusions |
+| **Windows** | `ACL` is a system term | CLI alias is `aw`, no naming conflict |
+| **macOS** | Gatekeeper may block Ollama | Document: `xattr -d com.apple.quarantine` |
+| **Linux** | SELinux may restrict file access | Document: `semanage fcontext` for `~/anticlaw/` |
+
+---
+
+## 16. Roadmap
+
+### v0.1 — Foundation (2 weeks)
+
+- [ ] Directory structure, config loader
+- [ ] Core models: Project, Chat, Message, Insight
+- [ ] File system storage: read/write chat .md files with YAML frontmatter
+- [ ] Claude Provider: parse `conversations.json` → .md files
+- [ ] Playwright scraper: collect project→chat mapping from claude.ai (one-time)
+- [ ] SQLite metadata DB
+- [ ] CLI: `aw import claude`, `aw list`, `aw show`
+
+### v0.2 — Search (1 week)
+
+- [ ] Tier 1: keyword search (stdlib)
+- [ ] Tier 2: BM25 (bm25s)
+- [ ] Tier 3: fuzzy (rapidfuzz)
+- [ ] Tier 4: semantic (Ollama + ChromaDB)
+- [ ] Tier 5: hybrid fusion
+- [ ] CLI: `aw search`
+- [ ] Indexing pipeline: auto-index on import
+
+### v0.3 — MCP Server (1 week)
+
+- [ ] FastMCP server with 13 tools
+- [ ] Hooks: PreCompact, AutoReminder
+- [ ] Registration: `aw mcp install claude-code`
+- [ ] Agent template: `agents/anticlaw.md`
+- [ ] CLAUDE.md template for projects
+
+### v0.4 — Knowledge Graph (1 week)
+
+- [ ] MAGMA graph: nodes, 4 edge types
+- [ ] Auto-edge generation on `aw_remember`
+- [ ] Intent-aware recall (why/when/what)
+- [ ] CLI: `aw related`, `aw why`, `aw timeline`
+
+### v0.5 — Local LLM (1 week)
+
+- [ ] Ollama integration: summarizer, tagger, Q&A
+- [ ] Auto-summarize on import
+- [ ] Auto-tag on import
+- [ ] CLI: `aw summarize`, `aw autotag`, `aw ask`
+
+### v0.6 — AnticLaw (1 week)
+
+- [ ] `aw inbox` — classify unprocessed chats
+- [ ] `aw stale` — detect inactive projects
+- [ ] `aw duplicates` — find similar chats
+- [ ] `aw health` — integrity check
+- [ ] Retention lifecycle: archive, purge, restore
+
+### v0.7 — Second Provider (1 week)
+
+- [ ] ChatGPT Provider: parse their export format
+- [ ] Unified import: both providers produce same .md format
+- [ ] Cross-provider search
+
+### v1.0 — Stable Release
+
+- [ ] Full test coverage
+- [ ] Documentation
+- [ ] PyPI package
+- [ ] Interactive installer
+- [ ] Docker support
+
+---
+
+## 17. Prior Art & Inspiration
+
+| Project | What we take | What we do differently |
+|---------|-------------|----------------------|
+| **EchoVault** | MCP tool pattern, directive descriptions, SQLite + FTS5, Ollama embeddings | Add project hierarchy, multi-provider, anticlaw features |
+| **MemCP** | 5-tier search, MAGMA graph, context-as-variable, retention lifecycle, hooks | Simplify to 13 tools (vs 21), add provider abstraction, file-first philosophy |
+| **Obsidian** | Markdown + YAML frontmatter, folder = project, human-readable files | Add LLM integration, semantic search, MCP server |
+| **Letta (MemGPT)** | External memory for LLMs concept | Local-first, no cloud dependency |
+| **Beads** | Git-backed task/memory tracking | Broader scope (full KB, not just tasks) |
+
+---
+
+## 18. Design Decisions
+
+1. **Markdown over JSON for chats.** JSON is better for machines, but Markdown is readable, editable, greppable, and compatible with Obsidian/VS Code. YAML frontmatter gives us the structured metadata we need.
+
+2. **SQLite over MySQL/PostgreSQL.** Zero-config, single file, embedded. Perfect for local-first tool. No daemon to manage. WAL mode gives us concurrent reads.
+
+3. **ChromaDB over sqlite-vec.** ChromaDB is a proper vector DB with built-in persistence, filtering, and metadata. sqlite-vec is lighter but requires manual similarity computation.
+
+4. **Ollama over cloud embeddings.** Privacy (no data leaves the machine), cost (free), speed (local inference). Trade-off: requires ~5 GB disk for models.
+
+5. **13 MCP tools, not 21.** MemCP's 21 tools is too many — leads to tool confusion for the LLM. We merge retention and project tools into CLI-only commands, keeping MCP focused on what the agent needs during a session.
+
+6. **No fork of EchoVault or MemCP.** Both solve different problems. Our file-first, multi-provider architecture is fundamentally different. Easier to build from scratch and borrow patterns than to refactor someone else's data model.
