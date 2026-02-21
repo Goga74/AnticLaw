@@ -7,6 +7,7 @@ import logging
 import sqlite3
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from enum import Enum
 from pathlib import Path
 
 log = logging.getLogger(__name__)
@@ -67,7 +68,7 @@ class MetaDB:
             (
                 chat.id, chat.title, project_id, chat.provider, chat.remote_id,
                 _format_dt(chat.created), _format_dt(chat.updated),
-                tags_json, chat.summary, str(chat.importance), str(chat.status),
+                tags_json, chat.summary, _val(chat.importance), _val(chat.status),
                 str(file_path), chat.token_count,
                 chat.message_count or len(chat.messages), content,
             ),
@@ -91,7 +92,7 @@ class MetaDB:
             (
                 dir_path.name, project.name, project.description,
                 _format_dt(project.created), _format_dt(project.updated),
-                tags_json, str(project.status), str(dir_path),
+                tags_json, _val(project.status), str(dir_path),
             ),
         )
         self.conn.commit()
@@ -299,6 +300,82 @@ class MetaDB:
         )
         self.conn.commit()
 
+    # --- Insights ---
+
+    def add_insight(self, insight) -> None:
+        """Insert an insight into the index."""
+        tags_json = json.dumps(insight.tags) if insight.tags else "[]"
+        self.conn.execute(
+            """INSERT OR REPLACE INTO insights
+               (id, content, category, importance, tags, project_id,
+                chat_id, created, updated, status)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                insight.id, insight.content, _val(insight.category),
+                _val(insight.importance), tags_json, insight.project_id,
+                insight.chat_id, _format_dt(insight.created),
+                _format_dt(insight.updated), _val(insight.status),
+            ),
+        )
+        self.conn.commit()
+
+    def get_insight(self, insight_id: str) -> dict | None:
+        """Get an insight by ID."""
+        row = self.conn.execute(
+            "SELECT * FROM insights WHERE id = ?", (insight_id,)
+        ).fetchone()
+        if row is None:
+            return None
+        return dict(row)
+
+    def list_insights(
+        self,
+        *,
+        query: str = "",
+        project: str | None = None,
+        category: str | None = None,
+        importance: str | None = None,
+        max_results: int = 20,
+    ) -> list[dict]:
+        """List insights with optional filters."""
+        sql = "SELECT * FROM insights WHERE status = 'active'"
+        params: list = []
+
+        if query:
+            sql += " AND content LIKE ?"
+            params.append(f"%{query}%")
+        if project:
+            sql += " AND project_id = ?"
+            params.append(project)
+        if category:
+            sql += " AND category = ?"
+            params.append(category)
+        if importance:
+            sql += " AND importance = ?"
+            params.append(importance)
+
+        sql += " ORDER BY created DESC LIMIT ?"
+        params.append(max_results)
+
+        rows = self.conn.execute(sql, params).fetchall()
+        return [dict(r) for r in rows]
+
+    def delete_insight(self, insight_id: str) -> bool:
+        """Delete an insight (set status to purged). Returns True if found."""
+        cursor = self.conn.execute(
+            "UPDATE insights SET status = 'purged' WHERE id = ? AND status = 'active'",
+            (insight_id,),
+        )
+        self.conn.commit()
+        return cursor.rowcount > 0
+
+    def count_insights(self) -> int:
+        """Count active insights."""
+        row = self.conn.execute(
+            "SELECT COUNT(*) as cnt FROM insights WHERE status = 'active'"
+        ).fetchone()
+        return row["cnt"] if row else 0
+
 
 # --- Schema ---
 
@@ -335,7 +412,27 @@ CREATE TABLE IF NOT EXISTS projects (
 CREATE VIRTUAL TABLE IF NOT EXISTS chats_fts USING fts5(
     chat_id UNINDEXED, title, summary, content, tags
 );
+
+CREATE TABLE IF NOT EXISTS insights (
+    id TEXT PRIMARY KEY,
+    content TEXT,
+    category TEXT,
+    importance TEXT,
+    tags TEXT,
+    project_id TEXT,
+    chat_id TEXT,
+    created TEXT,
+    updated TEXT,
+    status TEXT
+);
 """
+
+
+def _val(v: object) -> str:
+    """Extract string value from a str Enum or plain string."""
+    if isinstance(v, Enum):
+        return str(v.value)
+    return str(v)
 
 
 def _format_dt(dt: datetime | None) -> str:

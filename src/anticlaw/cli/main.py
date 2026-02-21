@@ -12,6 +12,7 @@ from anticlaw.cli.project_cmd import (
     show_cmd,
     tag_cmd,
 )
+from anticlaw.cli.mcp_cmd import mcp_group
 from anticlaw.cli.search_cmd import search_cmd
 
 
@@ -29,6 +30,7 @@ cli.add_command(move_cmd)
 cli.add_command(tag_cmd)
 cli.add_command(create_group)
 cli.add_command(reindex_cmd)
+cli.add_command(mcp_group)
 
 
 if __name__ == "__main__":
