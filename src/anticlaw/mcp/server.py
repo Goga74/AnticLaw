@@ -10,6 +10,7 @@ from fastmcp import FastMCP
 
 from anticlaw import __version__
 from anticlaw.core.config import resolve_home
+from anticlaw.core.graph import GraphDB
 from anticlaw.core.meta_db import MetaDB
 from anticlaw.core.models import Insight
 from anticlaw.core.search import search as search_fn
@@ -45,6 +46,11 @@ def _get_db(home: Path | None = None) -> MetaDB:
 def _get_store(home: Path | None = None) -> ContextStore:
     h = home or _get_home()
     return ContextStore(h / ".acl" / "contexts")
+
+
+def _get_graph(home: Path | None = None) -> GraphDB:
+    h = home or _get_home()
+    return GraphDB(h / ".acl" / "graph.db")
 
 
 def _with_reminder(result: str) -> str:
@@ -91,10 +97,13 @@ def remember_impl(
         project_id=project_id,
     )
     db = _get_db(home)
+    graph = _get_graph(home)
     try:
         db.add_insight(insight)
+        graph.add_node(insight)
         return {"id": insight.id, "status": "saved"}
     finally:
+        graph.close()
         db.close()
 
 
@@ -159,6 +168,50 @@ def search_impl(
         ]
     finally:
         db.close()
+
+
+def related_impl(
+    home: Path,
+    node_id: str,
+    edge_type: str | None = None,
+    depth: int = 2,
+) -> dict:
+    graph = _get_graph(home)
+    try:
+        node = graph.resolve_node(node_id)
+        if not node:
+            return {"status": "not_found", "node_id": node_id}
+        results = graph.traverse(node["id"], edge_type, depth)
+        return {
+            "status": "ok",
+            "node": {
+                "id": node["id"],
+                "content": node["content"][:200],
+                "category": node.get("category", ""),
+            },
+            "related": [
+                {
+                    "id": r["node"]["id"],
+                    "content": r["node"]["content"][:200],
+                    "edge_type": r["edge_type"],
+                    "weight": r["weight"],
+                    "depth": r["depth"],
+                }
+                for r in results
+            ],
+        }
+    finally:
+        graph.close()
+
+
+def graph_stats_impl(home: Path) -> dict:
+    graph = _get_graph(home)
+    try:
+        stats = graph.graph_stats()
+        stats["status"] = "ok"
+        return stats
+    finally:
+        graph.close()
 
 
 def projects_impl(home: Path) -> list[dict]:
@@ -336,7 +389,7 @@ def aw_peek_chunk(name: str, chunk_number: int) -> str:
     return _with_reminder(store.peek(name, chunk_number))
 
 
-# --- Graph (2 stubs) ---
+# --- Graph (2 tools) ---
 
 
 @mcp.tool()
@@ -345,32 +398,24 @@ def aw_related(
     edge_type: str | None = None,
     depth: int = 2,
 ) -> str:
-    """Traverse the knowledge graph from a node (not yet implemented).
+    """Traverse the knowledge graph from a node.
 
-    Will support edge types: semantic, temporal, causal, entity.
-    Planned for a future release.
+    Returns related insights connected via edges.
+    Edge types: semantic, temporal, causal, entity.
+    Use edge_type to filter by a specific relationship type.
     """
-    return json.dumps(
-        {
-            "status": "not_implemented",
-            "message": "Graph traversal will be available after the knowledge graph phase.",
-        }
-    )
+    result = related_impl(_get_home(), node_id, edge_type, depth)
+    return _with_reminder(json.dumps(result))
 
 
 @mcp.tool()
 def aw_graph_stats() -> str:
-    """Knowledge graph statistics (not yet implemented).
+    """Knowledge graph statistics.
 
-    Will return: node count, edge counts by type, top entities, project distribution.
-    Planned for a future release.
+    Returns: node count, edge counts by type, top entities, project distribution.
     """
-    return json.dumps(
-        {
-            "status": "not_implemented",
-            "message": "Graph statistics will be available after the knowledge graph phase.",
-        }
-    )
+    result = graph_stats_impl(_get_home())
+    return _with_reminder(json.dumps(result))
 
 
 # --- Project (1 tool) ---

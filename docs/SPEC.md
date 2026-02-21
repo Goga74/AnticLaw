@@ -671,11 +671,12 @@ anticlaw/
 │   │   ├── meta_db.py           # ✅ SQLite WAL + FTS5 metadata index (MetaDB)
 │   │   ├── search.py            # ✅ 5-tier search dispatcher (keyword/BM25/fuzzy/semantic/hybrid)
 │   │   ├── index.py             # ✅ ChromaDB vector indexing (VectorIndex)
-│   │   ├── graph.py             # MAGMA 4-graph (SQLite)
+│   │   ├── graph.py             # ✅ MAGMA 4-graph (SQLite graph.db, 4 edge types)
+│   │   ├── entities.py          # ✅ Regex entity extractor
 │   │   ├── embeddings.py        # (unused — embedding providers in providers/embedding/)
 │   │   └── retention.py         # 3-zone lifecycle
 │   ├── mcp/
-│   │   ├── server.py            # ✅ FastMCP server — 13 tool definitions
+│   │   ├── server.py            # ✅ FastMCP server — 13 tools (all implemented)
 │   │   ├── context_store.py     # ✅ Context-as-variable storage + chunking
 │   │   ├── hooks.py             # ✅ TurnTracker, config generation, install functions
 │   │   └── __main__.py          # ✅ Entry point for python -m anticlaw.mcp
@@ -710,6 +711,7 @@ anticlaw/
 │       ├── import_cmd.py        # ✅ aw import claude <zip>
 │       ├── search_cmd.py        # ✅ aw search with filters
 │       ├── project_cmd.py       # ✅ aw list, show, move, tag, create, reindex
+│       ├── graph_cmd.py         # ✅ aw related, aw why, aw timeline
 │       ├── knowledge_cmd.py     # aw inbox, stale, duplicates ...
 │       ├── provider_cmd.py      # aw providers ...
 │       ├── daemon_cmd.py        # aw daemon ...
@@ -937,12 +939,12 @@ When enabled:
 - [ ] Agent template: `agents/anticlaw.md` (deferred to v1.0)
 - [ ] CLAUDE.md template for projects (deferred to v1.0)
 
-### v0.4 — Knowledge Graph (1 week)
+### v0.4 — Knowledge Graph (1 week) ✅
 
-- [ ] MAGMA graph: nodes, 4 edge types
-- [ ] Auto-edge generation on `aw_remember`
-- [ ] Intent-aware recall (why/when/what)
-- [ ] CLI: `aw related`, `aw why`, `aw timeline`
+- [x] MAGMA graph: nodes, 4 edge types (temporal/entity/semantic/causal)
+- [x] Auto-edge generation on `aw_remember`
+- [x] Intent-aware recall (why/when/what)
+- [x] CLI: `aw related`, `aw why`, `aw timeline`
 
 ### v0.5 — Local LLM (1 week)
 

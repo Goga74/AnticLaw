@@ -459,7 +459,7 @@ Goal: BM25, fuzzy, semantic, hybrid search.
 
 ---
 
-### Phase 6: Knowledge Graph — MAGMA (Days 15–17)
+### Phase 6: Knowledge Graph — MAGMA (Days 15–17) ✅
 
 ```
 Goal: Insights connected via 4 edge types, intent-aware recall.
@@ -468,63 +468,49 @@ Goal: Insights connected via 4 edge types, intent-aware recall.
 **Files:**
 
 `src/anticlaw/core/graph.py`:
-- [ ] SQLite schema in `.acl/graph.db`:
-  ```sql
-  CREATE TABLE nodes (
-      id TEXT PRIMARY KEY,
-      content TEXT,
-      category TEXT,
-      importance TEXT,
-      tags TEXT,
-      project_id TEXT,
-      chat_id TEXT,
-      created TEXT,
-      updated TEXT,
-      status TEXT
-  );
-
-  CREATE TABLE edges (
-      id TEXT PRIMARY KEY,
-      source_id TEXT,
-      target_id TEXT,
-      edge_type TEXT,     -- temporal | entity | semantic | causal
-      weight REAL,
-      metadata TEXT,      -- JSON: entity name, similarity score, etc.
-      created TEXT,
-      FOREIGN KEY (source_id) REFERENCES nodes(id),
-      FOREIGN KEY (target_id) REFERENCES nodes(id)
-  );
-  ```
-- [ ] `add_node(insight)` → create node + auto-generate edges
-- [ ] `auto_temporal_edges(node)` — link to recent nodes (30 min window)
-- [ ] `auto_entity_edges(node)` — extract entities, link to same-entity nodes
-- [ ] `auto_semantic_edges(node)` — embed, find top-3 similar, create edges
-- [ ] `auto_causal_edges(node)` — detect causal keywords, link to cause/effect
-- [ ] `traverse(node_id, edge_type, depth)` → connected nodes
-- [ ] `intent_detect(query)` → preferred edge type ("why"→causal, "when"→temporal)
-- [ ] `graph_stats()` → counts, top entities
+- [x] SQLite schema in `.acl/graph.db` (nodes + edges tables with indexes)
+- [x] `add_node(insight)` → create node + auto-generate edges (all 4 types)
+- [x] `_auto_temporal_edges(node)` — link to nodes within configurable time window (default 30 min)
+- [x] `_auto_entity_edges(node)` — extract entities, link to same-entity nodes
+- [x] `_auto_semantic_edges(node)` — embed, find top-K similar (>0.7 threshold), create edges
+- [x] `_auto_causal_edges(node)` — detect causal keywords, link to cause/effect
+- [x] `traverse(node_id, edge_type, depth)` → connected nodes with BFS
+- [x] `intent_detect(query)` → preferred edge type ("why"→causal, "when"→temporal, "what"→entity)
+- [x] `graph_stats()` → counts, top entities, project distribution
 
 `src/anticlaw/core/entities.py`:
-- [ ] Regex entity extractor: file paths, URLs, CamelCase, technical terms
-- [ ] (Optional) LLM entity extractor via Ollama
+- [x] Regex entity extractor: file paths, URLs, CamelCase, mixed-case terms, UPPER_CASE identifiers
+- [x] `has_causal_language(text)` — detect causal keywords (EN + RU)
+- [ ] (Optional) LLM entity extractor via Ollama (deferred to Phase 7)
 
 Update MCP server:
-- [ ] `aw_related` — real implementation
-- [ ] `aw_graph_stats` — real implementation
+- [x] `aw_related` — real implementation (graph traversal with edge type filter)
+- [x] `aw_graph_stats` — real implementation (node/edge counts, top entities)
+- [x] `aw_remember` now also adds node to graph.db with auto-edge generation
 
-CLI:
-- [ ] `aw related <node-id> [--edge-type causal]`
-- [ ] `aw why "decision X"` — causal traversal shortcut
-- [ ] `aw timeline <project>` — temporal traversal
+`src/anticlaw/cli/graph_cmd.py`:
+- [x] `aw related <node-id> [--edge-type causal] [--depth N]`
+- [x] `aw why "decision X"` — causal traversal shortcut
+- [x] `aw timeline <project>` — chronological node listing
 
-**Tests:**
-- [ ] Add 3 nodes → temporal edges auto-created
-- [ ] Same entity in 2 nodes → entity edge auto-created
-- [ ] Similar content → semantic edge with weight > 0.7
-- [ ] "because" in text → causal edge detected
-- [ ] Intent detection: "why X" → causal, "when X" → temporal
+> **Divergence from plan:** Semantic edge computation uses pure-Python cosine similarity over embeddings stored as JSON in graph.db (avoids coupling to ChromaDB VectorIndex). Embeddings are optional — if no embedder provided, semantic edges are skipped (graceful degradation). Causal edge generation links to both entity-overlapping and temporally close nodes when causal keywords detected. Node embeddings stored in graph.db `embedding` TEXT column (JSON array of floats). `resolve_node()` supports partial ID matching like other commands.
 
-**Deliverable:** `aw why "chose SQLite"` traces causal chain
+**Tests (67 new, 333 total):**
+- [x] Add 3 nodes within time window → temporal edges auto-created
+- [x] No temporal edges outside window
+- [x] Same entity in 2 nodes → entity edge auto-created (CamelCase, URLs, technical terms)
+- [x] Similar content with mock embedder → semantic edge with weight > 0.7
+- [x] Dissimilar content → no semantic edge
+- [x] No semantic edges without embedder
+- [x] "because" in text → causal edge detected
+- [x] Russian causal keywords → causal edge detected
+- [x] No causal edges without causal keywords
+- [x] Intent detection: "why X" → causal, "when X" → temporal, "what X" → entity
+- [x] Graph traversal returns connected nodes with depth control
+- [x] Graph stats: node/edge counts, project distribution
+- [x] CLI: related, why, timeline commands (happy path + error cases)
+
+**Deliverable:** `aw why "chose SQLite"` traces causal chain ✅
 
 ---
 

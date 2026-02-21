@@ -31,11 +31,12 @@ src/anticlaw/
 │   ├── meta_db.py           # ✅ SQLite WAL + FTS5 metadata index (MetaDB)
 │   ├── search.py            # ✅ 5-tier search dispatcher (keyword/BM25/fuzzy/semantic/hybrid)
 │   ├── index.py             # ✅ ChromaDB vector indexing (VectorIndex)
-│   ├── graph.py             # MAGMA 4-graph (temporal/entity/semantic/causal edges)
+│   ├── graph.py             # ✅ MAGMA 4-graph (temporal/entity/semantic/causal edges)
+│   ├── entities.py          # ✅ Regex entity extractor (paths, URLs, CamelCase, terms)
 │   ├── embeddings.py        # Ollama/OpenAI/local embedding providers
 │   └── retention.py         # 3-zone lifecycle (active → archive → purge)
 ├── mcp/
-│   ├── server.py            # ✅ FastMCP server — 13 tools (2 stubs)
+│   ├── server.py            # ✅ FastMCP server — 13 tools (all implemented)
 │   ├── context_store.py     # ✅ Context-as-variable storage + 6 chunking strategies
 │   ├── hooks.py             # ✅ TurnTracker, config generation, install functions
 │   └── __main__.py          # ✅ Entry point for python -m anticlaw.mcp
@@ -70,6 +71,7 @@ src/anticlaw/
     ├── import_cmd.py         # ✅ aw import claude <zip>
     ├── search_cmd.py         # ✅ aw search <query> with filters
     ├── project_cmd.py        # ✅ aw list, show, move, tag, create, reindex
+    ├── graph_cmd.py           # ✅ aw related, aw why, aw timeline
     ├── knowledge_cmd.py      # aw inbox, stale, duplicates ...
     ├── provider_cmd.py       # aw providers ...
     ├── daemon_cmd.py         # aw daemon ...
@@ -146,7 +148,7 @@ There are three main approaches...
 
 ## Current Phase
 
-Phase 5 complete. Next: Phase 6 (Knowledge Graph — MAGMA).
+Phase 6 complete. Next: Phase 7 (Local LLM Integration).
 
 ### Completed
 - **Phase 0:** Scaffolding — pyproject.toml, directory structure, `aw --version` ✅
@@ -155,9 +157,10 @@ Phase 5 complete. Next: Phase 6 (Knowledge Graph — MAGMA).
 - **Phase 3:** SQLite metadata + basic search — MetaDB (WAL+FTS5), search dispatcher, `aw search`, `aw list/show/move/tag/create/reindex` ✅
 - **Phase 4:** MCP server — FastMCP with 13 tools, context-store with 6 chunking strategies, TurnTracker, `aw mcp start/install` ✅
 - **Phase 5:** Advanced search — Tiers 2-5 (BM25 via bm25s, fuzzy via rapidfuzz, semantic via ChromaDB+Ollama embeddings, hybrid fusion), EmbeddingProvider Protocol, OllamaEmbeddingProvider, VectorIndex, auto-tier selection, graceful degradation ✅
+- **Phase 6:** Knowledge graph — MAGMA 4-graph (GraphDB with temporal/entity/semantic/causal edges), regex entity extractor, intent detection, auto-edge generation on remember, `aw related/why/timeline`, real `aw_related`/`aw_graph_stats` MCP tools ✅
 
 ### Test coverage
-266 unit tests passing (models, fileutil, storage, config, registry, claude provider, import CLI, meta_db, search, search CLI, project CLI, context store, hooks, MCP tools, MCP CLI, embedding provider, vector index, advanced search tiers, fallback behavior).
+333 unit tests passing (models, fileutil, storage, config, registry, claude provider, import CLI, meta_db, search, search CLI, project CLI, context store, hooks, MCP tools, MCP CLI, embedding provider, vector index, advanced search tiers, fallback behavior, entities, graph, graph CLI).
 
 ## Specs
 
