@@ -177,17 +177,28 @@ settings:
 
 ### 5.1 Provider Interface
 
-Every provider implements one contract:
+Every LLM provider implements a common Protocol. Providers declare capabilities via `ProviderInfo` — not every provider supports every method. See `providers/llm/base.py` for the actual implementation and `docs/PROVIDERS.md` for the full three-family architecture (LLM, Backup, Embedding).
 
 ```python
+# src/anticlaw/providers/llm/base.py (actual implementation)
+
 from pathlib import Path
-from typing import Protocol
+from typing import Protocol, runtime_checkable
 from anticlaw.core.models import ChatData, RemoteProject, RemoteChat, SyncResult
 
+@runtime_checkable
 class LLMProvider(Protocol):
-    """Interface for LLM platform integration."""
+    """Contract for LLM platform integration."""
 
-    name: str  # "claude", "chatgpt", "gemini", "ollama"
+    @property
+    def name(self) -> str:
+        """Unique provider ID: 'claude', 'chatgpt', 'gemini', 'ollama'."""
+        ...
+
+    @property
+    def info(self) -> ProviderInfo:
+        """Display name, version, capabilities."""
+        ...
 
     def auth(self, config: dict) -> bool:
         """Verify credentials / connectivity."""
@@ -214,9 +225,10 @@ class LLMProvider(Protocol):
         ...
 
     def sync(
-        self, local_project: Path, remote_project_id: str
+        self, local_project: Path, remote_project_id: str,
+        direction: str = "pull",
     ) -> SyncResult:
-        """Bidirectional sync between local folder and remote project."""
+        """Sync between local folder and remote project."""
         ...
 ```
 
@@ -641,60 +653,70 @@ pip install anticlaw[scraper]              # + Playwright for one-time import
 
 ## 13. Project Structure (Source Code)
 
+> **Note:** Provider modules use a nested family structure (`providers/llm/`, `providers/backup/`, `providers/embedding/`) as defined in PROVIDERS.md, not the flat layout originally shown here. Provider data models (`ChatData`, `RemoteProject`, etc.) live in `core/models.py` to keep them co-located with core types.
+
 ```
 anticlaw/
 ├── src/anticlaw/
-│   ├── __init__.py
+│   ├── __init__.py              # __version__
 │   ├── core/
-│   │   ├── models.py            # Project, Chat, Message, Insight, Edge
-│   │   ├── storage.py           # File system operations (CRUD)
+│   │   ├── models.py            # Chat, ChatMessage, Project, Insight, Edge + provider models
+│   │   ├── storage.py           # ChatStorage: file system CRUD
+│   │   ├── config.py            # Config loader with defaults, ACL_HOME resolution
+│   │   ├── fileutil.py          # Atomic writes, safe names, locking, permissions
 │   │   ├── index.py             # ChromaDB + FTS5 indexing
 │   │   ├── graph.py             # MAGMA 4-graph (SQLite)
 │   │   ├── search.py            # 5-tier search engine
 │   │   ├── embeddings.py        # Ollama embedding provider
-│   │   ├── retention.py         # 3-zone lifecycle
-│   │   └── fileutil.py          # Atomic writes, safe names, locking
+│   │   └── retention.py         # 3-zone lifecycle
 │   ├── mcp/
 │   │   ├── server.py            # FastMCP server — 13 tool definitions
 │   │   └── hooks.py             # PreCompact, AutoReminder, PostSave
 │   ├── providers/
-│   │   ├── base.py              # LLMProvider Protocol
-│   │   ├── claude.py            # Claude.ai import/export
-│   │   ├── chatgpt.py           # ChatGPT import/export
-│   │   ├── gemini.py            # Gemini import (placeholder)
-│   │   └── ollama.py            # Local LLM operations
+│   │   ├── registry.py          # ProviderRegistry (unified for all 3 families)
+│   │   ├── llm/
+│   │   │   ├── base.py          # LLMProvider Protocol + ProviderInfo + Capability
+│   │   │   ├── claude.py        # Parse conversations.json + scrubbing
+│   │   │   ├── chatgpt.py       # ChatGPT import/export
+│   │   │   └── ollama.py        # Local LLM operations
+│   │   ├── backup/
+│   │   │   ├── base.py          # BackupProvider Protocol
+│   │   │   ├── local.py         # shutil.copytree snapshots
+│   │   │   ├── gdrive.py        # Google Drive API
+│   │   │   ├── s3.py            # boto3 (AWS/MinIO/B2/R2)
+│   │   │   └── rsync.py         # shells out to rsync
+│   │   └── embedding/
+│   │       ├── base.py          # EmbeddingProvider Protocol
+│   │       ├── ollama.py        # nomic-embed-text (768-dim)
+│   │       └── local_model.py   # model2vec/fastembed (256-dim)
 │   ├── llm/
 │   │   ├── summarizer.py        # Summarization via Ollama
 │   │   ├── tagger.py            # Auto-tagging via Ollama
 │   │   └── qa.py                # Q&A over knowledge base
+│   ├── daemon/
+│   │   ├── watcher.py           # watchdog file monitor
+│   │   ├── scheduler.py         # APScheduler cron jobs
+│   │   ├── tray.py              # pystray system tray
+│   │   └── ipc.py               # Unix socket / Named pipe
 │   └── cli/
 │       ├── main.py              # Click CLI entry point
 │       ├── import_cmd.py        # aw import ...
 │       ├── search_cmd.py        # aw search ...
 │       ├── project_cmd.py       # aw list, move, create ...
 │       ├── knowledge_cmd.py     # aw inbox, stale, duplicates ...
+│       ├── provider_cmd.py      # aw providers ...
+│       ├── daemon_cmd.py        # aw daemon ...
 │       └── mcp_cmd.py           # aw mcp ...
-├── agents/                      # MCP agent templates for Claude Code
-│   └── anticlaw.md           # Deployed to ~/.claude/agents/
-├── templates/
-│   └── CLAUDE.md                # Session instructions for Claude Code
 ├── tests/
 │   ├── unit/
 │   └── integration/
 ├── docs/
-│   ├── ARCHITECTURE.md
-│   ├── TOOLS.md                 # MCP tool reference
-│   ├── SEARCH.md                # Search system details
-│   ├── GRAPH.md                 # MAGMA graph details
-│   └── PROVIDERS.md             # Provider implementation guide
-├── scripts/
-│   ├── install.sh
-│   └── uninstall.sh
+│   ├── SPEC.md                  # This document
+│   ├── PLAN.md                  # Implementation plan
+│   └── PROVIDERS.md             # Provider contracts and architecture
 ├── pyproject.toml
 ├── config.example.yaml
 ├── README.md
-├── SPEC.md                      # This document
-├── CHANGELOG.md
 └── LICENSE                      # MIT
 ```
 
@@ -880,13 +902,14 @@ When enabled:
 
 ### v0.1 — Foundation (2 weeks)
 
-- [ ] Directory structure, config loader
-- [ ] Core models: Project, Chat, Message, Insight
-- [ ] File system storage: read/write chat .md files with YAML frontmatter
-- [ ] Claude Provider: parse `conversations.json` → .md files
+- [x] Directory structure, config loader
+- [x] Core models: Project, Chat, ChatMessage, Insight, Edge + provider models
+- [x] File system storage: read/write chat .md files with YAML frontmatter
+- [x] Claude Provider: parse `conversations.json` → .md files
 - [ ] Playwright scraper: collect project→chat mapping from claude.ai (one-time)
 - [ ] SQLite metadata DB
-- [ ] CLI: `aw import claude`, `aw list`, `aw show`
+- [x] CLI: `aw import claude`
+- [ ] CLI: `aw list`, `aw show`
 
 ### v0.2 — Search (1 week)
 

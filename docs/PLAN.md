@@ -129,50 +129,25 @@ daemon:
 
 ## Step-by-Step Implementation Plan
 
-### Phase 0: Project Scaffolding (Day 1)
+### Phase 0: Project Scaffolding (Day 1) ✅
 
 ```
 Goal: Empty project that installs, runs, and has CI.
 ```
 
-- [ ] Create git repo `anticlaw`
-- [ ] `pyproject.toml` with metadata, dependencies, extras (`[search]`, `[fuzzy]`, `[semantic]`, `[all]`, `[daemon]`, `[scraper]`)
-- [ ] Project structure:
-  ```
-  anticlaw/
-  ├── src/anticlaw/
-  │   ├── __init__.py          # version
-  │   ├── core/
-  │   │   └── __init__.py
-  │   ├── mcp/
-  │   │   └── __init__.py
-  │   ├── providers/
-  │   │   └── __init__.py
-  │   ├── llm/
-  │   │   └── __init__.py
-  │   ├── daemon/
-  │   │   └── __init__.py
-  │   └── cli/
-  │       └── __init__.py
-  ├── tests/
-  │   └── __init__.py
-  ├── pyproject.toml
-  ├── README.md
-  ├── SPEC.md
-  ├── PLAN.md                  # this file
-  ├── LICENSE                  # MIT
-  └── .gitignore
-  ```
-- [ ] `pip install -e .` works
-- [ ] `aw --version` prints version
+- [x] Create git repo `anticlaw`
+- [x] `pyproject.toml` with metadata, dependencies, extras (`[search]`, `[fuzzy]`, `[semantic]`, `[all]`, `[daemon]`, `[scraper]`, `[llm]`, `[backup]`, `[dev]`)
+- [x] Project structure (src/anticlaw/ with core/, mcp/, providers/{llm,backup,embedding}/, llm/, daemon/, cli/)
+- [x] `pip install -e .` works
+- [x] `aw --version` prints version
 - [ ] GitHub Actions: lint (ruff) + test (pytest)
 - [ ] Pre-commit hooks: ruff, basic checks
 
-**Deliverable:** `aw --version` → `anticlaw 0.1.0-dev`
+**Deliverable:** `aw --version` → `anticlaw 0.1.0-dev` ✅
 
 ---
 
-### Phase 1: Core Models + Storage (Days 2–3)
+### Phase 1: Core Models + Storage (Days 2–3) ✅
 
 ```
 Goal: Read and write chat files with YAML frontmatter.
@@ -181,38 +156,56 @@ Goal: Read and write chat files with YAML frontmatter.
 **Files:**
 
 `src/anticlaw/core/models.py`:
-- [ ] `ChatMessage` dataclass: role (human/assistant), content, timestamp
-- [ ] `Chat` dataclass: id, title, created, updated, provider, remote_id, tags, summary, importance, status, messages: list[ChatMessage]
-- [ ] `Project` dataclass: name, description, created, updated, tags, status, provider_mappings: dict
-- [ ] `Insight` dataclass: id, content, category, importance, tags, project_id, chat_id, created, status (for knowledge graph)
+- [x] `ChatMessage` dataclass: role (human/assistant), content, timestamp
+- [x] `Chat` dataclass: id, title, created, updated, provider, remote_id, remote_project_id, model, tags, summary, token_count, message_count, importance, status, messages
+- [x] `Project` dataclass: name, description, created, updated, tags, status, providers: dict, settings: dict
+- [x] `Insight` dataclass: id, content, category, importance, tags, project_id, chat_id, created, updated, status
+- [x] `Edge` dataclass: id, source_id, target_id, edge_type, weight, metadata, created
+- [x] Provider models: `RemoteProject`, `RemoteChat`, `ChatData`, `SyncResult`
+- [x] Enums: `Status`, `Importance`, `InsightCategory`, `EdgeType`
+
+> **Divergence from original plan:** Project field renamed from `provider_mappings` → `providers` (matches _project.yaml key). Chat has additional fields: `remote_project_id`, `model`, `token_count`, `message_count`. Edge and provider models added here (spec had them in providers/base.py) to keep core models centralized.
 
 `src/anticlaw/core/storage.py`:
-- [ ] `init_home(path)` — create directory structure, .acl/, config.yaml
-- [ ] `list_projects(home)` → list[Project]
-- [ ] `list_chats(project_path)` → list[Chat]
-- [ ] `read_chat(path)` → Chat (parse YAML frontmatter + markdown body)
-- [ ] `write_chat(path, chat)` → file (render YAML frontmatter + markdown)
-- [ ] `read_project(path)` → Project (parse _project.yaml)
-- [ ] `write_project(path, project)` → file
-- [ ] `move_chat(src, dst_project)` → update file location + metadata
-- [ ] File permissions: 0o600/0o700 on every write
+- [x] `ChatStorage.init_home()` — create directory structure (.acl/, _inbox/, _archive/)
+- [x] `ChatStorage.list_projects()` → list[Project]
+- [x] `ChatStorage.list_chats(project_path)` → list[Chat]
+- [x] `ChatStorage.read_chat(path)` → Chat (parse YAML frontmatter + markdown body)
+- [x] `ChatStorage.write_chat(path, chat)` → file (render YAML frontmatter + markdown)
+- [x] `ChatStorage.read_project(path)` → Project (parse _project.yaml)
+- [x] `ChatStorage.write_project(path, project)` → file
+- [x] `ChatStorage.move_chat(src, dst_project)` → update file location + handle name collisions
+- [x] `ChatStorage.chat_filename(chat)` → generate YYYY-MM-DD_slug.md filename
+- [x] `ChatStorage.create_project(name)` → create folder + _project.yaml
+- [x] File permissions: 0o600/0o700 on every write (via fileutil)
+
+> **Divergence:** Storage is a class (`ChatStorage(home)`) rather than standalone functions, for cleaner API. Added `chat_filename()` and `create_project()` helpers not in original plan.
 
 `src/anticlaw/core/fileutil.py`:
-- [ ] `safe_filename(title)` → slug (no path traversal, no special chars)
-- [ ] `atomic_write(path, content)` — write to .tmp, then rename
-- [ ] `file_lock(path)` — flock (Unix) / msvcrt (Windows)
+- [x] `safe_filename(title)` → slug (no path traversal, no special chars)
+- [x] `atomic_write(path, content)` — write to .tmp, then os.replace
+- [x] `file_lock(path)` — fcntl.flock (Unix) / msvcrt.locking (Windows)
+- [x] `ensure_dir(path)` — mkdir with secure permissions
+- [x] `ensure_file_permissions(path)` — chmod 0o600
 
-**Tests:**
-- [ ] Round-trip: Chat → write_chat → read_chat → same Chat
-- [ ] Round-trip: Project → write_project → read_project → same Project
-- [ ] safe_filename edge cases (unicode, long names, path traversal attempts)
-- [ ] File permissions verified after write
+`src/anticlaw/core/config.py` (added, not in original plan):
+- [x] `load_config(path)` — load YAML with deep-merge defaults
+- [x] `resolve_home()` — ACL_HOME from env / config / default
+- [x] `DEFAULTS` dict matching config.example.yaml
 
-**Deliverable:** Can programmatically create and read `~/anticlaw/project/chat.md`
+**Tests (57 total):**
+- [x] Round-trip: Chat → write_chat → read_chat → same Chat
+- [x] Round-trip: Project → write_project → read_project → same Project
+- [x] safe_filename edge cases (unicode, long names, path traversal, special chars)
+- [x] Multiline content, empty messages, load_messages=False
+- [x] list_projects, list_chats, move_chat with collision handling
+- [x] Config: deep merge, env override, empty/corrupt YAML fallback
+
+**Deliverable:** Can programmatically create and read `~/anticlaw/project/chat.md` ✅
 
 ---
 
-### Phase 2: Claude Provider + Import (Days 4–5)
+### Phase 2: Claude Provider + Import (Days 4–5) ✅
 
 ```
 Goal: Import Claude.ai export into local file structure.
@@ -220,40 +213,51 @@ Goal: Import Claude.ai export into local file structure.
 
 **Files:**
 
-`src/anticlaw/providers/base.py`:
-- [ ] `LLMProvider` Protocol (as in SPEC.md)
-- [ ] `ChatData`, `RemoteProject`, `RemoteChat`, `SyncResult` models
+`src/anticlaw/providers/registry.py` (added):
+- [x] `ProviderRegistry` class: register, get, get_entry, list_family, list_all, families
+- [x] `ProviderEntry` dataclass (family, name, cls, extras)
+- [x] Global `registry` singleton
 
-`src/anticlaw/providers/claude.py`:
-- [ ] `parse_export_zip(zip_path)` → extract conversations.json
-- [ ] `parse_conversations_json(json_path)` → list[ChatData]
-- [ ] `map_to_chats(chat_data_list)` → list[Chat] (convert to our format)
-- [ ] Handle: message roles, timestamps, attachments (text only for now)
-- [ ] Scrubbing: `--scrub` flag strips API keys / passwords
+`src/anticlaw/providers/llm/base.py` (was `providers/base.py` in original plan):
+- [x] `LLMProvider` Protocol (`@runtime_checkable`) — auth, list_projects, list_chats, export_chat, export_all, import_chat, sync
+- [x] `ProviderInfo` dataclass (display_name, version, capabilities)
+- [x] `Capability` enum (EXPORT_BULK, EXPORT_SINGLE, IMPORT, LIST_PROJECTS, LIST_CHATS, SYNC, SCRAPE)
+
+> **Divergence:** Provider models (`ChatData`, `RemoteProject`, etc.) live in `core/models.py` rather than `providers/base.py`. Protocol and base types moved to `providers/llm/base.py` following the nested provider family structure from PROVIDERS.md.
+
+`src/anticlaw/providers/llm/claude.py` (was `providers/claude.py`):
+- [x] `ClaudeProvider.parse_export_zip(zip_path, scrub)` → list[ChatData]
+- [x] `ClaudeProvider.load_project_mapping(path)` → dict[str, str]
+- [x] `scrub_text(text)` — 7 regex patterns (API keys, Bearer tokens, GitHub tokens, AWS keys, private keys, connection strings, passwords)
+- [x] Handle: simple `text` field and structured `content` array, message roles, timestamps
+- [x] Graceful skip of malformed conversations
 
 `src/anticlaw/providers/claude_scraper.py` (optional, requires `[scraper]`):
-- [ ] Playwright script: login to claude.ai → list projects → map chat→project
-- [ ] Output: `project_mapping.json` with {chat_uuid: project_name}
-- [ ] One-time use, not for ongoing sync
+- [ ] Playwright script: login to claude.ai → list projects → map chat→project (deferred)
 
 `src/anticlaw/cli/main.py`:
-- [ ] Click CLI entry point
-- [ ] `aw init [path]` — initialize ACL_HOME
-- [ ] `aw import claude <export.zip> [--scrub] [--mapping project_mapping.json]`
+- [x] Click CLI entry point with import command group
 
 `src/anticlaw/cli/import_cmd.py`:
-- [ ] Read ZIP → parse → create projects and chat files
-- [ ] If mapping provided: chat goes to correct project folder
-- [ ] If no mapping: everything goes to `_inbox/`
-- [ ] Progress bar (click.progressbar or rich)
+- [x] `aw import claude <export.zip> [--scrub] [--mapping FILE] [--home PATH]`
+- [x] If mapping provided: chat goes to correct project folder (auto-created)
+- [x] If no mapping: everything goes to `_inbox/`
+- [x] Progress bar (click.progressbar)
+- [x] Duplicate detection (skip if filename exists)
+- [x] Summary output (imported, skipped, mapped)
 
-**Tests:**
-- [ ] Parse sample conversations.json (create test fixture)
-- [ ] Import creates correct file structure
-- [ ] Scrubbing removes known patterns
-- [ ] Missing mapping → all in _inbox/
+> **Divergence:** `aw init` not implemented as separate command yet — `aw import` auto-initializes home. Added `--home` flag for overriding ACL_HOME.
 
-**Deliverable:** `aw import claude export.zip` → files appear in `~/anticlaw/`
+**Tests (40 new, 97 total):**
+- [x] Parse sample conversations.json (ZIP fixture)
+- [x] Conversation fields, messages, timestamps, structured content
+- [x] Import creates correct file structure
+- [x] Scrubbing removes 7 pattern types
+- [x] Missing mapping → all in _inbox/
+- [x] Duplicate skipping, empty export, help text
+- [x] ProviderRegistry: register, get, list, families, entries
+
+**Deliverable:** `aw import claude export.zip` → files appear in `~/anticlaw/` ✅
 
 ---
 
@@ -706,9 +710,10 @@ Goal: Production-ready release.
 click              # CLI framework
 pyyaml             # YAML parsing
 python-frontmatter # Markdown + YAML frontmatter
-pydantic           # Data models & validation
 keyring            # Secrets management
 ```
+
+> **Note:** Data models use stdlib `dataclasses` (not Pydantic) per coding standards in CLAUDE.md — keeps core deps minimal.
 
 ### Optional extras
 
