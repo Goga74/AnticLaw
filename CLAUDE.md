@@ -13,6 +13,7 @@ AnticLaw (`aw` CLI) manages exported LLM conversations (Claude, ChatGPT, Gemini)
 - **Search:** 5-tier (keyword → BM25 → fuzzy → semantic → hybrid)
 - **Embeddings:** Ollama + nomic-embed-text (768-dim)
 - **Local LLM:** Ollama (summarization, tagging, Q&A)
+- **Providers:** 6 families (LLM, Backup, Embedding, Source, Input, Scraper)
 - **Config:** YAML (`~/.acl/config.yaml`), secrets in system keyring
 - **Build:** pyproject.toml, pip extras for optional deps
 
@@ -41,11 +42,12 @@ src/anticlaw/
 │   ├── hooks.py             # ✅ TurnTracker, config generation, install functions
 │   └── __main__.py          # ✅ Entry point for python -m anticlaw.mcp
 ├── providers/
-│   ├── registry.py          # ✅ ProviderRegistry (unified for all 3 families)
+│   ├── registry.py          # ✅ ProviderRegistry (unified for all 6 families)
 │   ├── llm/
 │   │   ├── base.py          # ✅ LLMProvider Protocol + ProviderInfo + Capability enum
 │   │   ├── claude.py        # ✅ Parse conversations.json from export ZIP + scrubbing
 │   │   ├── chatgpt.py       # Parse ChatGPT export
+│   │   ├── gemini.py        # Parse Google Takeout Gemini export
 │   │   └── ollama.py        # Local LLM Q&A
 │   ├── backup/
 │   │   ├── base.py          # BackupProvider Protocol
@@ -53,10 +55,15 @@ src/anticlaw/
 │   │   ├── gdrive.py        # Google Drive API
 │   │   ├── s3.py            # boto3 (AWS/MinIO/B2/R2)
 │   │   └── rsync.py         # shells out to rsync
-│   └── embedding/
-│       ├── base.py          # ✅ EmbeddingProvider Protocol + EmbeddingInfo
-│       ├── ollama.py        # ✅ OllamaEmbeddingProvider (nomic-embed-text, 768-dim)
-│       └── local_model.py   # model2vec/fastembed (256-dim)
+│   ├── embedding/
+│   │   ├── base.py          # ✅ EmbeddingProvider Protocol + EmbeddingInfo
+│   │   ├── ollama.py        # ✅ OllamaEmbeddingProvider (nomic-embed-text, 768-dim)
+│   │   └── local_model.py   # model2vec/fastembed (256-dim)
+│   └── scraper/
+│       ├── base.py          # ScraperProvider Protocol + ScraperInfo
+│       ├── claude.py        # Claude.ai project/knowledge scraper
+│       ├── chatgpt.py       # ChatGPT structure scraper
+│       └── gemini.py        # Gemini data scraper
 ├── llm/
 │   ├── __init__.py           # ✅ Package init
 │   ├── ollama_client.py      # ✅ OllamaClient: generate(), available_models(), is_available()
@@ -80,6 +87,7 @@ src/anticlaw/
     ├── llm_cmd.py             # ✅ aw summarize, aw autotag, aw ask
     ├── knowledge_cmd.py      # aw inbox, stale, duplicates ...
     ├── provider_cmd.py       # aw providers ...
+    ├── sync_cmd.py           # aw sync, aw push, aw pull (bidirectional sync)
     ├── daemon_cmd.py         # aw daemon ...
     └── mcp_cmd.py            # ✅ aw mcp start, install
 ```
@@ -192,3 +200,20 @@ Read these files BEFORE implementing any phase. They contain exact data models, 
 5. **Security from day one.** File permissions, keyring for secrets, content scrubbing on import.
 6. **Tests for every module.** Write tests alongside code, not after. Minimum: happy path + error case.
 7. **After completing a task**, update this file's "Current Phase" section if the phase changed.
+
+## Planned Features (post-Phase 7)
+
+Key upcoming features documented in PLAN.md and SPEC.md:
+
+- **Phase 8:** Daemon + file watcher (watchdog, APScheduler, system tray, cron task scheduler)
+- **Phase 9:** Retention + antientropy (inbox suggestions, stale detection, duplicate finding)
+- **Phase 10:** ChatGPT provider import
+- **Phase 11:** v1.0 release (PyPI, Docker, docs)
+- **Phase 12:** Local file source + HTTP API (`aw scan`, `aw api start`)
+- **Phase 13:** Voice input via Whisper (`aw listen`)
+- **Phase 14:** Alexa integration
+- **Phase 15:** Web UI (`aw ui`)
+- **Phase 16:** Gemini provider — Google Takeout import (`aw import gemini`)
+- **Phase 17:** Bidirectional LLM sync — push/pull chats via cloud APIs, file-as-interface pattern (`aw sync`, `aw push`, `aw pull`)
+- **Scraper providers:** Browser-based supplementary data collection (Playwright)
+- **6 provider families:** LLM, Backup, Embedding, Source, Input, Scraper

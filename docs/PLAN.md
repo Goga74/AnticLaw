@@ -120,6 +120,46 @@ daemon:
     auto_run: true
     schedule: "0 4 * * *"           # daily at 4 AM
 
+  # Task scheduler — configurable cron jobs
+  tasks:
+    - name: reindex
+      schedule: "0 2 * * *"         # daily at 2 AM
+      enabled: true
+      action: reindex               # rebuild meta.db + vectors from filesystem
+
+    - name: backup
+      schedule: "0 3 * * *"         # daily at 3 AM
+      enabled: false
+      action: backup
+      params:
+        providers: [local]          # which backup providers to run
+
+    - name: retention
+      schedule: "0 4 * * *"         # daily at 4 AM
+      enabled: true
+      action: retention             # archive/purge per retention policy
+
+    - name: health
+      schedule: "0 5 * * 1"         # weekly Monday at 5 AM
+      enabled: true
+      action: health                # run health check, log warnings
+
+    - name: sync
+      schedule: "0 */6 * * *"       # every 6 hours
+      enabled: false
+      action: sync
+      params:
+        providers: [claude]
+        direction: pull
+
+    - name: summarize-inbox
+      schedule: "0 6 * * *"         # daily at 6 AM
+      enabled: false
+      action: summarize-inbox       # auto-summarize + auto-tag new inbox chats
+      params:
+        auto_tag: true
+        auto_summarize: true
+
   tray:
     enabled: true                    # show system tray icon
     show_notifications: true
@@ -580,9 +620,12 @@ Goal: Background process watches file system, auto-indexes, tray icon.
 - [ ] On .md deleted → mark as archived in meta.db
 
 `src/anticlaw/daemon/scheduler.py`:
-- [ ] APScheduler integration
-- [ ] Jobs: backup, retention, health check, sync
+- [ ] APScheduler integration with configurable cron task system
+- [ ] Built-in task types: reindex, backup, retention, health, sync, summarize-inbox
 - [ ] Cron-style schedule from config.yaml
+- [ ] Each task: name, schedule (cron expression), enabled flag, action, optional params
+- [ ] Task execution logging to `.acl/daemon.log`
+- [ ] Missed job handling: run on startup if missed by > 1 period
 
 `src/anticlaw/daemon/backup.py`:
 - [ ] `BackupEngine` with pluggable targets:
@@ -1077,6 +1120,167 @@ ui = ["fastapi", "uvicorn", "jinja2"]
 
 ---
 
+### Phase 16: Gemini Provider (Days 49–51)
+
+```
+Goal: Import Google Gemini conversations from Google Takeout export.
+```
+
+**Files:**
+
+`src/anticlaw/providers/llm/gemini.py`:
+- [ ] `GeminiProvider` implementing `LLMProvider` Protocol
+- [ ] Parse Google Takeout Gemini export (different structure from Claude/ChatGPT)
+- [ ] Map to same `ChatData` model — output identical `.md` files
+- [ ] Handle: conversation titles, model info, timestamps, multi-turn format
+- [ ] Scrub secrets if `--scrub` flag passed
+
+`src/anticlaw/cli/import_cmd.py` (extend):
+- [ ] `aw import gemini <takeout.zip> [--scrub] [--home PATH]`
+- [ ] Same UX as `aw import claude`: progress bar, duplicate detection, summary
+
+`src/anticlaw/providers/registry.py` (extend):
+- [ ] Register `GeminiProvider` in provider registry
+
+**Google Takeout structure:**
+```
+Takeout/
+├── Gemini/
+│   └── Conversations/
+│       ├── 2025-01-15_conversation-title/
+│       │   ├── conversation.json
+│       │   └── (optional) attachments/
+│       └── ...
+```
+
+**Tests:**
+- [ ] Parse sample Gemini Takeout export
+- [ ] Output .md files identical in format to Claude/ChatGPT imports
+- [ ] Cross-provider search finds chats from all three providers
+- [ ] Scrubbing works on Gemini content
+- [ ] CLI: `aw import gemini` with help, errors, happy path
+
+**Deliverable:** `aw import gemini takeout.zip` → chats in `~/anticlaw/`, searchable alongside Claude/ChatGPT chats
+
+---
+
+### Phase 17: Bidirectional LLM Sync (Days 52–57)
+
+```
+Goal: Push local chats to cloud LLM platforms via API, enabling
+      file-as-interface workflow and bidirectional sync.
+```
+
+**Core concept — file-as-interface:**
+
+1. User (or MCP tool) creates a `.md` file with `status: draft` in frontmatter
+2. Daemon detects the new file, reads the push target from config hierarchy
+3. Daemon sends content to the target LLM API (Claude/ChatGPT/Gemini)
+4. LLM response is written back to the same `.md` file
+5. File status changes to `status: complete`
+
+The file system remains the source of truth — the cloud LLM is just another provider.
+
+**Push target routing hierarchy:**
+
+```
+1. File frontmatter:  push_target: claude
+2. Project config:    _project.yaml → default_push_target: chatgpt
+3. Global config:     config.yaml → sync.default_push_target: claude
+```
+
+**Files:**
+
+`src/anticlaw/core/sync.py`:
+- [ ] `SyncEngine` class:
+  - `push_chat(chat, provider)` — send local chat to cloud
+  - `pull_new(provider, since)` — pull new chats from cloud (API-based, not export ZIP)
+  - `resolve_push_target(file_path)` — walk config hierarchy for target
+  - `sync_bidirectional(project, provider)` — full two-way sync with conflict resolution
+- [ ] Conflict resolution: local wins by default (file-first philosophy), configurable
+- [ ] Status tracking: `sync_status` in frontmatter (synced/pending/conflict)
+
+`src/anticlaw/providers/llm/base.py` (extend):
+- [ ] Add `Capability.PUSH` — provider can accept chat pushes via API
+- [ ] Add `Capability.PULL_API` — provider can list/pull chats via API (not just export ZIP)
+
+`src/anticlaw/providers/llm/claude.py` (extend):
+- [ ] `push_chat()` via Claude API (requires API key, not web subscription)
+- [ ] `pull_new()` via Claude API
+
+`src/anticlaw/providers/llm/chatgpt.py` (extend):
+- [ ] `push_chat()` via OpenAI API
+- [ ] `pull_new()` via OpenAI API
+
+`src/anticlaw/providers/llm/gemini.py` (extend):
+- [ ] `push_chat()` via Google AI API
+- [ ] `pull_new()` via Google AI API
+
+`src/anticlaw/daemon/watcher.py` (extend):
+- [ ] Detect `status: draft` files → trigger push to resolved target
+- [ ] On push complete: update file with response, set `status: complete`
+
+`src/anticlaw/cli/sync_cmd.py`:
+- [ ] `aw sync <provider> [--project X] [--direction pull|push|both]`
+- [ ] `aw push <chat-id> [--target claude]` — push single chat
+- [ ] `aw pull <provider> [--since 7d]` — pull recent from cloud
+- [ ] `aw sync status` — show sync state for all projects
+
+**API key vs web subscription — critical distinction:**
+
+| Platform | Web subscription | API access |
+|----------|-----------------|------------|
+| Claude | Claude Pro/Team ($20/mo) — NO API access | Anthropic API key (separate, pay-per-token) |
+| ChatGPT | ChatGPT Plus ($20/mo) — NO API access | OpenAI API key (separate, pay-per-token) |
+| Gemini | Gemini Advanced ($20/mo) — includes API | Google AI API key (free tier available) |
+
+Users MUST have API keys for push/pull — web subscriptions alone don't provide API access. The CLI will warn about this clearly and guide users to obtain API keys.
+
+**Config:**
+
+```yaml
+# config.yaml
+sync:
+  enabled: false
+  default_push_target: claude         # fallback target
+  auto_push_drafts: true              # daemon watches for status: draft
+  conflict_resolution: local-wins     # local-wins | remote-wins | ask
+  providers:
+    claude:
+      api_key: keyring                # stored in system keyring
+    chatgpt:
+      api_key: keyring
+    gemini:
+      api_key: keyring
+```
+
+**Frontmatter extensions:**
+
+```yaml
+---
+id: "acl-20250218-001"
+title: "Auth discussion"
+status: active                        # active | draft | syncing | complete | conflict
+push_target: claude                   # override project/global default
+sync_status: synced                   # synced | pending | conflict | local-only
+last_synced: 2025-02-20T09:15:00Z
+remote_id: "conv_abc123"             # cloud platform's ID for this chat
+---
+```
+
+**Tests:**
+- [ ] Push target resolution: file > project > global
+- [ ] SyncEngine push: local → cloud API → response written back
+- [ ] SyncEngine pull: cloud → local .md files
+- [ ] Conflict resolution: both sides modified
+- [ ] Draft file detection by daemon watcher
+- [ ] API key validation and helpful error messages
+- [ ] CLI: sync, push, pull commands
+
+**Deliverable:** Create a `.md` with `status: draft` → daemon sends to Claude API → response appears in same file
+
+---
+
 ## Dependency Summary
 
 ### Core (always installed)
@@ -1136,5 +1340,7 @@ Ollama       → ollama.com (for embeddings + local LLM)
 | **13** | **36–38** | **Voice input (Whisper)** | **`aw listen`** |
 | **14** | **39–42** | **Alexa integration** | **`aw tunnel start`, Alexa Skill** |
 | **15** | **43–48** | **Web UI** | **`aw ui`** |
+| **16** | **49–51** | **Gemini Provider** | **`aw import gemini`** |
+| **17** | **52–57** | **Bidirectional LLM Sync** | **`aw sync`, `aw push`, `aw pull`** |
 
-**Total: ~48 working days to v2.0**
+**Total: ~57 working days to v2.0**

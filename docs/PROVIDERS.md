@@ -10,25 +10,34 @@ Every external integration in AnticLaw is a **provider** — a pluggable module
 that implements a strict contract (Python Protocol). New providers are added
 without touching core code.
 
-Three provider families:
+Six provider families:
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│                  Provider Registry                       │
-│                                                         │
-│  ┌─────────────┐  ┌──────────────┐  ┌───────────────┐  │
-│  │ LLM         │  │ Backup       │  │ Embedding     │  │
-│  │ Providers   │  │ Providers    │  │ Providers     │  │
-│  ├─────────────┤  ├──────────────┤  ├───────────────┤  │
-│  │ Claude      │  │ Local (copy) │  │ Ollama        │  │
-│  │ ChatGPT     │  │ Google Drive │  │ OpenAI API    │  │
-│  │ Gemini      │  │ S3 / MinIO   │  │ HuggingFace   │  │
-│  │ Ollama      │  │ Dropbox      │  │ (local model) │  │
-│  │ (your own)  │  │ WebDAV       │  │ (your own)    │  │
-│  │             │  │ rsync/ssh    │  │               │  │
-│  │             │  │ (your own)   │  │               │  │
-│  └─────────────┘  └──────────────┘  └───────────────┘  │
-└─────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────┐
+│                      Provider Registry                            │
+│                                                                  │
+│  ┌─────────────┐  ┌──────────────┐  ┌───────────────┐           │
+│  │ LLM         │  │ Backup       │  │ Embedding     │           │
+│  │ Providers   │  │ Providers    │  │ Providers     │           │
+│  ├─────────────┤  ├──────────────┤  ├───────────────┤           │
+│  │ Claude      │  │ Local (copy) │  │ Ollama        │           │
+│  │ ChatGPT     │  │ Google Drive │  │ OpenAI API    │           │
+│  │ Gemini      │  │ S3 / MinIO   │  │ HuggingFace   │           │
+│  │ Ollama      │  │ Dropbox      │  │ (local model) │           │
+│  │ (your own)  │  │ WebDAV       │  │ (your own)    │           │
+│  │             │  │ rsync/ssh    │  │               │           │
+│  └─────────────┘  └──────────────┘  └───────────────┘           │
+│                                                                  │
+│  ┌─────────────┐  ┌──────────────┐  ┌───────────────┐           │
+│  │ Source       │  │ Input        │  │ Scraper       │           │
+│  │ Providers   │  │ Providers    │  │ Providers     │           │
+│  ├─────────────┤  ├──────────────┤  ├───────────────┤           │
+│  │ local-files │  │ cli          │  │ claude-scraper│           │
+│  │ obsidian    │  │ mcp          │  │ chatgpt-scr.  │           │
+│  │ notion      │  │ http-api     │  │ gemini-scr.   │           │
+│  │ (your own)  │  │ whisper      │  │ (your own)    │           │
+│  └─────────────┘  └──────────────┘  └───────────────┘           │
+└──────────────────────────────────────────────────────────────────┘
 ```
 
 ---
@@ -142,6 +151,22 @@ class ChatGPTProvider:
         capabilities={"export_bulk"},
     )
     # export_bulk → parse conversations.json from OpenAI export
+```
+
+### Provider: Gemini
+
+```python
+class GeminiProvider:
+    name = "gemini"
+    info = ProviderInfo(
+        display_name="Google Gemini",
+        version="1.0.0",
+        capabilities={"export_bulk", "import", "scrape"},
+    )
+    # export_bulk → parse Google Takeout Gemini export (Phase 16)
+    # import      → push chats via Google AI API (Phase 17)
+    # scrape      → Playwright: Gems, extensions data
+    # Note: Gemini Advanced includes some API access (unlike Claude/ChatGPT)
 ```
 
 ### Provider: Ollama
@@ -540,9 +565,131 @@ providers:
 
 ---
 
-## 4. Unified Provider Registry
+## 4. Scraper Providers
 
-All three families share common patterns:
+**Purpose:** Browser-based data collection from LLM platforms that don't expose full APIs. Supplements official exports with project mapping, Knowledge files, and other data not available in export ZIPs.
+
+### Contract
+
+```python
+from typing import Protocol, runtime_checkable
+from dataclasses import dataclass
+from playwright.sync_api import Browser
+
+@dataclass
+class ScraperInfo:
+    display_name: str               # "Claude.ai Scraper"
+    login_url: str                  # "https://claude.ai/login"
+    capabilities: set[str]          # {"projects", "chat_mapping", "knowledge"}
+
+@runtime_checkable
+class ScraperProvider(Protocol):
+    """Contract for browser-based data collection."""
+
+    @property
+    def name(self) -> str:
+        """Unique provider ID: 'claude-scraper', 'chatgpt-scraper', etc."""
+        ...
+
+    @property
+    def info(self) -> ScraperInfo:
+        ...
+
+    def login(self, browser: Browser) -> bool:
+        """Navigate to login page, wait for user to authenticate.
+        Returns True if login successful."""
+        ...
+
+    def scrape_projects(self, browser: Browser) -> list[RemoteProject]:
+        """Scrape project/folder structure from sidebar."""
+        ...
+
+    def scrape_chat_mapping(self, browser: Browser) -> dict[str, str]:
+        """Map chat_id → project_id by navigating the UI."""
+        ...
+
+    def scrape_knowledge(self, browser: Browser, project_id: str) -> list[Path]:
+        """Download Knowledge files attached to a project."""
+        ...
+```
+
+### Provider: Claude Scraper
+
+```python
+class ClaudeScraper:
+    name = "claude-scraper"
+    info = ScraperInfo(
+        display_name="Claude.ai Scraper",
+        login_url="https://claude.ai/login",
+        capabilities={"projects", "chat_mapping", "knowledge"},
+    )
+    # One-time: map chats to projects, download Knowledge files
+    # Requires: user logs in via browser, scraper reads sidebar
+    # No API key needed — uses existing web session
+```
+
+### Provider: ChatGPT Scraper
+
+```python
+class ChatGPTScraper:
+    name = "chatgpt-scraper"
+    info = ScraperInfo(
+        display_name="ChatGPT Scraper",
+        login_url="https://chat.openai.com/auth/login",
+        capabilities={"projects", "chat_mapping"},
+    )
+    # Scrape folder structure, custom GPT configs
+```
+
+### Provider: Gemini Scraper
+
+```python
+class GeminiScraper:
+    name = "gemini-scraper"
+    info = ScraperInfo(
+        display_name="Gemini Scraper",
+        login_url="https://gemini.google.com",
+        capabilities={"projects", "chat_mapping"},
+    )
+    # Scrape Gems, extensions data
+```
+
+### Security
+
+- Runs Playwright in **headed mode** — user sees exactly what happens
+- No credentials stored — user logs in manually each time
+- Read-only — never modifies data on the platform
+- Rate-limited: 1-2 second delays between page navigations
+- Requires `pip install anticlaw[scraper]` (Playwright ~50 MB)
+
+### Registration
+
+```yaml
+# config.yaml
+providers:
+  scraper:
+    claude:
+      enabled: true
+    chatgpt:
+      enabled: false
+    gemini:
+      enabled: false
+```
+
+### CLI
+
+```bash
+aw scrape claude                    # launch browser, login, scrape project mapping
+aw scrape claude --knowledge        # also download Knowledge files
+aw scrape chatgpt                   # scrape ChatGPT structure
+aw scrape gemini                    # scrape Gemini structure
+```
+
+---
+
+## 5. Unified Provider Registry
+
+All six families share common patterns:
 
 ```python
 # src/anticlaw/providers/registry.py
@@ -583,6 +730,8 @@ registry = ProviderRegistry()
 # src/anticlaw/providers/llm/__init__.py registers LLM providers
 # src/anticlaw/providers/backup/__init__.py registers Backup providers
 # src/anticlaw/providers/embedding/__init__.py registers Embedding providers
+# src/anticlaw/providers/scraper/__init__.py registers Scraper providers
+# (Source and Input providers registered similarly)
 ```
 
 ### CLI
@@ -622,7 +771,7 @@ Embedding Providers:
 
 ---
 
-## 5. Source Code Layout (updated)
+## 6. Source Code Layout (updated)
 
 ```
 src/anticlaw/providers/
@@ -643,17 +792,23 @@ src/anticlaw/providers/
 │   ├── s3.py
 │   ├── rsync.py
 │   └── webdav.py
-└── embedding/
-    ├── __init__.py          # auto-register all embedding providers
-    ├── base.py              # EmbeddingProvider Protocol + EmbeddingInfo
-    ├── ollama.py
-    ├── openai.py
-    └── local_model.py
+├── embedding/
+│   ├── __init__.py          # auto-register all embedding providers
+│   ├── base.py              # EmbeddingProvider Protocol + EmbeddingInfo
+│   ├── ollama.py
+│   ├── openai.py
+│   └── local_model.py
+└── scraper/
+    ├── __init__.py          # auto-register all scraper providers
+    ├── base.py              # ScraperProvider Protocol + ScraperInfo
+    ├── claude.py            # Claude.ai project/knowledge scraper
+    ├── chatgpt.py           # ChatGPT structure scraper
+    └── gemini.py            # Gemini data scraper
 ```
 
 ---
 
-## 6. pip extras (updated)
+## 7. pip extras (updated)
 
 ```toml
 # pyproject.toml
@@ -662,6 +817,7 @@ search       = ["bm25s"]
 fuzzy        = ["rapidfuzz"]
 semantic     = ["chromadb", "numpy", "httpx"]
 llm          = ["httpx"]
+sync         = ["httpx", "anthropic", "openai", "google-generativeai"]
 daemon       = ["watchdog", "apscheduler", "pystray", "pillow", "plyer"]
 scraper      = ["playwright"]
 backup-gdrive = ["google-api-python-client", "google-auth-oauthlib"]

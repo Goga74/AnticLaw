@@ -266,9 +266,24 @@ Different JSON schema from Claude — separate parser needed. Same output: `.md`
 
 ### 5.4 Gemini Provider
 
-**Import source:** Google Takeout → Gemini data.
+**Import source:** Google Takeout → select Gemini → download ZIP.
 
-Lower priority. Placeholder for v0.4+.
+**Takeout structure:**
+```
+Takeout/
+├── Gemini/
+│   └── Conversations/
+│       ├── 2025-01-15_conversation-title/
+│       │   ├── conversation.json     # messages, timestamps, model info
+│       │   └── attachments/          # optional uploaded files
+│       └── ...
+```
+
+**Capabilities:**
+- `export_bulk` — parse Google Takeout ZIP (Phase 16)
+- `push` / `pull_api` — via Google AI API (Phase 17, free tier available)
+
+**Note:** Gemini Advanced subscribers ($20/mo) get some API access included, unlike Claude Pro and ChatGPT Plus which require separate API keys. See section 26 for details.
 
 ### 5.5 Ollama Provider
 
@@ -725,9 +740,11 @@ anticlaw/
 │   │       ├── ollama.py        # ✅ OllamaEmbeddingProvider (nomic-embed-text, 768-dim)
 │   │       └── local_model.py   # model2vec/fastembed (256-dim)
 │   ├── llm/
-│   │   ├── summarizer.py        # Summarization via Ollama
-│   │   ├── tagger.py            # Auto-tagging via Ollama
-│   │   └── qa.py                # Q&A over knowledge base
+│   │   ├── __init__.py          # ✅ Package init
+│   │   ├── ollama_client.py     # ✅ OllamaClient: generate(), available_models(), is_available()
+│   │   ├── summarizer.py        # ✅ Summarization via Ollama
+│   │   ├── tagger.py            # ✅ Auto-tagging via Ollama
+│   │   └── qa.py                # ✅ Q&A over knowledge base
 │   ├── daemon/
 │   │   ├── watcher.py           # watchdog file monitor
 │   │   ├── scheduler.py         # APScheduler cron jobs
@@ -742,8 +759,10 @@ anticlaw/
 │       ├── search_cmd.py        # ✅ aw search with filters
 │       ├── project_cmd.py       # ✅ aw list, show, move, tag, create, reindex
 │       ├── graph_cmd.py         # ✅ aw related, aw why, aw timeline
+│       ├── llm_cmd.py           # ✅ aw summarize, aw autotag, aw ask
 │       ├── knowledge_cmd.py     # aw inbox, stale, duplicates ...
 │       ├── provider_cmd.py      # aw providers ...
+│       ├── sync_cmd.py          # aw sync, aw push, aw pull (Phase 17)
 │       ├── daemon_cmd.py        # aw daemon ...
 │       └── mcp_cmd.py           # ✅ aw mcp start, install
 ├── tests/
@@ -808,6 +827,20 @@ providers:
     enabled: false
   gemini:
     enabled: false
+
+# Sync (bidirectional LLM sync — Phase 17)
+sync:
+  enabled: false
+  default_push_target: claude            # fallback push target
+  auto_push_drafts: true                 # daemon watches for status: draft
+  conflict_resolution: local-wins        # local-wins | remote-wins | ask
+  providers:
+    claude:
+      api_key: keyring
+    chatgpt:
+      api_key: keyring
+    gemini:
+      api_key: keyring
 
 # MCP
 mcp:
@@ -998,6 +1031,20 @@ When enabled:
 - [ ] Unified import: both providers produce same .md format
 - [ ] Cross-provider search
 
+### v0.8 — Gemini Provider (3 days)
+
+- [ ] Gemini Provider: parse Google Takeout export
+- [ ] Three-provider unified search
+- [ ] Scraper Providers: Playwright-based supplementary data collection
+
+### v0.9 — Bidirectional Sync (1 week)
+
+- [ ] Push chats to cloud LLMs via API
+- [ ] Pull new chats from cloud APIs
+- [ ] File-as-interface: `status: draft` → auto-push → response in file
+- [ ] Push target routing (file > project > global)
+- [ ] API key management and validation
+
 ### v1.0 — Stable Release
 
 - [ ] Full test coverage
@@ -1043,26 +1090,28 @@ Fourth provider family — content sources beyond LLM chat exports.
 ### Architecture
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│                  Provider Registry                       │
-│                                                         │
-│  ┌─────────────┐  ┌──────────────┐  ┌───────────────┐  │
-│  │ LLM         │  │ Backup       │  │ Embedding     │  │
-│  │ Providers   │  │ Providers    │  │ Providers     │  │
-│  └─────────────┘  └──────────────┘  └───────────────┘  │
-│                                                         │
-│  ┌─────────────┐  ┌──────────────┐                     │
-│  │ Source       │  │ Input        │  ← NEW             │
-│  │ Providers   │  │ Providers    │                     │
-│  ├─────────────┤  ├──────────────┤                     │
-│  │ llm-export  │  │ cli          │                     │
-│  │ local-files │  │ mcp          │                     │
-│  │ obsidian    │  │ http-api     │                     │
-│  │ notion      │  │ whisper      │                     │
-│  │ (your own)  │  │ alexa        │                     │
-│  └─────────────┘  └──────────────┘                     │
-└─────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────┐
+│                      Provider Registry                            │
+│                                                                  │
+│  ┌─────────────┐  ┌──────────────┐  ┌───────────────┐           │
+│  │ LLM         │  │ Backup       │  │ Embedding     │           │
+│  │ Providers   │  │ Providers    │  │ Providers     │           │
+│  └─────────────┘  └──────────────┘  └───────────────┘           │
+│                                                                  │
+│  ┌─────────────┐  ┌──────────────┐  ┌───────────────┐           │
+│  │ Source       │  │ Input        │  │ Scraper       │  ← NEW   │
+│  │ Providers   │  │ Providers    │  │ Providers     │           │
+│  ├─────────────┤  ├──────────────┤  ├───────────────┤           │
+│  │ llm-export  │  │ cli          │  │ claude-scraper│           │
+│  │ local-files │  │ mcp          │  │ chatgpt-scr.  │           │
+│  │ obsidian    │  │ http-api     │  │ gemini-scr.   │           │
+│  │ notion      │  │ whisper      │  │ (your own)    │           │
+│  │ (your own)  │  │ alexa        │  │               │           │
+│  └─────────────┘  └──────────────┘  └───────────────┘           │
+└──────────────────────────────────────────────────────────────────┘
 ```
+
+> **Note:** See section 27 for the ScraperProvider Protocol — browser-based supplementary data collection from LLM platforms.
 
 ### Source Provider Contract
 
@@ -1294,3 +1343,267 @@ on top of the HTTP API from Phase 12.
 | CSS | Tailwind | Utility-first, dark mode built-in |
 | Build | Vite | Fast builds, small output |
 | Bundled in | `src/anticlaw/ui/static/` | Pre-built, no Node.js at runtime |
+
+---
+
+## 25. Task Scheduler (v1.1+)
+
+The daemon's APScheduler component runs configurable cron jobs. Each task has a name, cron schedule, enabled flag, action type, and optional parameters.
+
+### Built-in task actions
+
+| Action | Description | Default schedule |
+|--------|-------------|-----------------|
+| `reindex` | Rebuild meta.db + vectors from filesystem | Daily 2 AM |
+| `backup` | Run backup providers (local, GDrive, S3, etc.) | Daily 3 AM |
+| `retention` | Archive/purge per retention policy | Daily 4 AM |
+| `health` | Run health check, log warnings to daemon.log | Weekly Monday 5 AM |
+| `sync` | Pull/push with cloud LLM providers | Every 6 hours |
+| `summarize-inbox` | Auto-summarize + auto-tag new inbox chats via Ollama | Daily 6 AM |
+
+### Configuration
+
+```yaml
+# config.yaml → daemon.tasks
+daemon:
+  tasks:
+    - name: reindex
+      schedule: "0 2 * * *"
+      enabled: true
+      action: reindex
+
+    - name: backup
+      schedule: "0 3 * * *"
+      enabled: false
+      action: backup
+      params:
+        providers: [local]
+
+    - name: retention
+      schedule: "0 4 * * *"
+      enabled: true
+      action: retention
+
+    - name: health
+      schedule: "0 5 * * 1"
+      enabled: true
+      action: health
+
+    - name: sync
+      schedule: "0 */6 * * *"
+      enabled: false
+      action: sync
+      params:
+        providers: [claude]
+        direction: pull
+
+    - name: summarize-inbox
+      schedule: "0 6 * * *"
+      enabled: false
+      action: summarize-inbox
+      params:
+        auto_tag: true
+        auto_summarize: true
+```
+
+### Custom tasks
+
+Users can define custom tasks with arbitrary shell commands:
+
+```yaml
+    - name: my-custom-export
+      schedule: "0 0 * * 0"         # weekly Sunday midnight
+      enabled: true
+      action: shell
+      params:
+        command: "aw export --all --format zip > /backup/anticlaw-weekly.zip"
+```
+
+### Missed job handling
+
+If the daemon was not running when a job was scheduled, it will run the job on startup if more than one period has elapsed since the last run. Last-run timestamps are stored in `.acl/scheduler_state.json`.
+
+---
+
+## 26. Bidirectional LLM Sync (v2.0+)
+
+### File-as-interface pattern
+
+AnticLaw enables a powerful workflow where the file system acts as the interface between the user and cloud LLMs:
+
+1. User (or MCP tool) creates a `.md` file with `status: draft` in frontmatter
+2. The daemon detects the file, resolves the push target from config hierarchy
+3. Content is sent to the target LLM API (Claude/ChatGPT/Gemini)
+4. LLM response is appended to the same `.md` file
+5. File status changes to `status: complete`
+
+```
+┌─────────────┐     status: draft     ┌──────────┐     API call     ┌───────────┐
+│  User / MCP │ ──────────────────────►│  Daemon  │ ──────────────►│  Cloud LLM │
+│  creates .md│                        │  detects │                 │   (API)   │
+└─────────────┘                        └────┬─────┘                 └─────┬─────┘
+                                            │                              │
+                    status: complete         │        response              │
+                   ◄─────────────────────────┼──────────────────────────────┘
+                    response in .md          │
+```
+
+### Push target routing
+
+The push target is resolved from the most specific to the most general:
+
+```
+1. File frontmatter:  push_target: claude
+2. Project config:    _project.yaml → default_push_target: chatgpt
+3. Global config:     config.yaml → sync.default_push_target: claude
+```
+
+### API key vs web subscription
+
+**Critical distinction** that users often confuse:
+
+| Platform | Web subscription | API access |
+|----------|-----------------|------------|
+| Claude | Claude Pro/Team ($20/mo) — **NO** API access | Anthropic API key (separate, pay-per-token) |
+| ChatGPT | ChatGPT Plus ($20/mo) — **NO** API access | OpenAI API key (separate, pay-per-token) |
+| Gemini | Gemini Advanced ($20/mo) — includes some API | Google AI API key (free tier available) |
+
+Push/pull features require **API keys**, not web subscriptions. The CLI validates this and shows clear guidance:
+
+```
+$ aw push chat-001 --target claude
+Error: No API key configured for Claude.
+
+Claude API access requires an Anthropic API key (separate from Claude Pro subscription).
+Get your key at: https://console.anthropic.com/settings/keys
+Then run: aw auth claude
+```
+
+### Sync modes
+
+| Mode | Command | Description |
+|------|---------|-------------|
+| Push single | `aw push <chat-id> --target claude` | Send one chat to cloud |
+| Pull recent | `aw pull claude --since 7d` | Download new cloud chats |
+| Bidirectional | `aw sync claude --project X` | Full two-way sync |
+| Draft auto-push | Daemon watches for `status: draft` | Automatic on file creation |
+
+### Conflict resolution
+
+When both local and cloud versions have changed:
+
+| Strategy | Behavior |
+|----------|----------|
+| `local-wins` (default) | Keep local version, overwrite cloud |
+| `remote-wins` | Keep cloud version, overwrite local |
+| `ask` | Mark as `status: conflict`, user resolves manually |
+
+### Frontmatter extensions
+
+```yaml
+---
+id: "acl-20250218-001"
+title: "Auth discussion"
+status: active                        # active | draft | syncing | complete | conflict
+push_target: claude                   # override project/global default
+sync_status: synced                   # synced | pending | conflict | local-only
+last_synced: 2025-02-20T09:15:00Z
+remote_id: "conv_abc123"             # cloud platform's ID for this chat
+---
+```
+
+---
+
+## 27. Scraper Providers (v1.1+)
+
+Sixth provider family — browser-based data collection from LLM platforms that don't expose full APIs.
+
+### Why scrapers?
+
+LLM platforms provide limited export capabilities:
+
+| Platform | Official export | What's missing |
+|----------|----------------|----------------|
+| Claude | `conversations.json` ZIP | Project→chat mapping, Knowledge files, system prompts |
+| ChatGPT | `conversations.json` ZIP | Custom GPT configs, shared conversations |
+| Gemini | Google Takeout | Gems, extensions data |
+
+Scrapers fill these gaps via Playwright browser automation as a one-time supplement to official exports.
+
+### ScraperProvider Protocol
+
+```python
+@runtime_checkable
+class ScraperProvider(Protocol):
+    """Contract for browser-based data collection."""
+
+    @property
+    def name(self) -> str:
+        """Provider ID: 'claude-scraper', 'chatgpt-scraper', etc."""
+        ...
+
+    @property
+    def info(self) -> ScraperInfo:
+        """Display name, capabilities, login URL."""
+        ...
+
+    def login(self, browser: Browser) -> bool:
+        """Navigate to login page, wait for user to authenticate.
+        Returns True if login successful."""
+        ...
+
+    def scrape_projects(self, browser: Browser) -> list[RemoteProject]:
+        """Scrape project/folder structure from sidebar."""
+        ...
+
+    def scrape_chat_mapping(self, browser: Browser) -> dict[str, str]:
+        """Map chat_id → project_id by navigating the UI."""
+        ...
+
+    def scrape_knowledge(self, browser: Browser, project_id: str) -> list[Path]:
+        """Download Knowledge files attached to a project."""
+        ...
+```
+
+### Provider: Claude Scraper
+
+```python
+class ClaudeScraper:
+    name = "claude-scraper"
+    info = ScraperInfo(
+        display_name="Claude.ai Scraper",
+        login_url="https://claude.ai/login",
+        capabilities={"projects", "chat_mapping", "knowledge"},
+    )
+    # One-time: map chats to projects, download Knowledge files
+    # Requires: user logs in via browser, scraper reads sidebar
+    # No API key needed — uses existing web session
+```
+
+### CLI
+
+```bash
+aw scrape claude                    # launch browser, login, scrape project mapping
+aw scrape claude --knowledge        # also download Knowledge files
+aw scrape chatgpt                   # scrape ChatGPT structure
+```
+
+### Security considerations
+
+- Scraper runs Playwright in **headed mode** (visible browser) — user sees exactly what happens
+- No credentials stored — user logs in manually each time
+- Scraper is read-only — never modifies data on the platform
+- Rate-limited: 1-2 second delays between page navigations
+- Requires `pip install anticlaw[scraper]` (Playwright ~50 MB)
+
+### Registration
+
+```yaml
+# config.yaml
+providers:
+  scraper:
+    claude:
+      enabled: true
+    chatgpt:
+      enabled: false
+```
