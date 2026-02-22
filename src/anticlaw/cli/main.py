@@ -17,6 +17,15 @@ from anticlaw.cli.project_cmd import (
     show_cmd,
     tag_cmd,
 )
+from anticlaw.cli.knowledge_cmd import (
+    duplicates_cmd,
+    health_cmd,
+    inbox_cmd,
+    restore_cmd,
+    retention_group,
+    stale_cmd,
+    stats_cmd,
+)
 from anticlaw.cli.mcp_cmd import mcp_group
 from anticlaw.cli.search_cmd import search_cmd
 
@@ -45,6 +54,13 @@ cli.add_command(ask_cmd)
 cli.add_command(daemon_group)
 cli.add_command(backup_group)
 cli.add_command(cron_group)
+cli.add_command(inbox_cmd)
+cli.add_command(stale_cmd)
+cli.add_command(duplicates_cmd)
+cli.add_command(health_cmd)
+cli.add_command(retention_group)
+cli.add_command(restore_cmd)
+cli.add_command(stats_cmd)
 
 
 if __name__ == "__main__":
