@@ -3,6 +3,9 @@
 import click
 
 from anticlaw import __version__
+from anticlaw.cli.backup_cmd import backup_group
+from anticlaw.cli.cron_cmd import cron_group
+from anticlaw.cli.daemon_cmd import daemon_group
 from anticlaw.cli.import_cmd import import_group
 from anticlaw.cli.graph_cmd import related_cmd, timeline_cmd, why_cmd
 from anticlaw.cli.llm_cmd import ask_cmd, autotag_cmd, summarize_cmd
@@ -39,6 +42,9 @@ cli.add_command(timeline_cmd)
 cli.add_command(summarize_cmd)
 cli.add_command(autotag_cmd)
 cli.add_command(ask_cmd)
+cli.add_command(daemon_group)
+cli.add_command(backup_group)
+cli.add_command(cron_group)
 
 
 if __name__ == "__main__":

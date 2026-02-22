@@ -49,6 +49,23 @@ DEFAULTS: dict = {
     "daemon": {
         "enabled": False,
         "autostart": False,
+        "log_level": "info",
+        "watch": {
+            "enabled": True,
+            "auto_index": True,
+            "auto_project": "ask",
+            "debounce_seconds": 2,
+            "ignore_patterns": ["*.tmp", "*.swp", ".git/*"],
+        },
+        "backup": {
+            "enabled": False,
+            "targets": [],
+        },
+        "tray": {
+            "enabled": True,
+            "show_notifications": True,
+        },
+        "tasks": [],
     },
 }
 

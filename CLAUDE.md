@@ -50,9 +50,9 @@ src/anticlaw/
 │   │   ├── gemini.py        # Parse Google Takeout Gemini export
 │   │   └── ollama.py        # Local LLM Q&A
 │   ├── backup/
-│   │   ├── base.py          # BackupProvider Protocol
-│   │   ├── local.py         # shutil.copytree snapshots
-│   │   ├── gdrive.py        # Google Drive API
+│   │   ├── base.py          # ✅ BackupProvider Protocol + BackupResult + BackupInfo
+│   │   ├── local.py         # ✅ LocalBackupProvider (shutil, incremental, snapshots)
+│   │   ├── gdrive.py        # ✅ GDriveBackupProvider (google-api, OAuth2, MD5 incremental)
 │   │   ├── s3.py            # boto3 (AWS/MinIO/B2/R2)
 │   │   └── rsync.py         # shells out to rsync
 │   ├── embedding/
@@ -71,10 +71,11 @@ src/anticlaw/
 │   ├── tagger.py             # ✅ auto_tag, auto_categorize via Ollama
 │   └── qa.py                 # ✅ ask() — search KB + LLM answer with references
 ├── daemon/
-│   ├── watcher.py           # watchdog file monitor
-│   ├── scheduler.py         # APScheduler cron jobs
-│   ├── tray.py              # pystray system tray
-│   └── ipc.py               # Unix socket / Named pipe
+│   ├── watcher.py           # ✅ watchdog file monitor (debounce, reindex, graph)
+│   ├── scheduler.py         # ✅ APScheduler cron jobs (7 built-in actions)
+│   ├── tray.py              # ✅ pystray system tray (menu, notifications)
+│   ├── ipc.py               # ✅ Unix socket / Named pipe (CLI ↔ daemon)
+│   └── service.py           # ✅ Platform service registration (systemd/launchd/Windows)
 ├── ui/
 │   ├── app.py               # FastAPI mount for SPA + API routes
 │   └── static/              # Pre-built SPA bundle
@@ -88,7 +89,9 @@ src/anticlaw/
     ├── knowledge_cmd.py      # aw inbox, stale, duplicates ...
     ├── provider_cmd.py       # aw providers ...
     ├── sync_cmd.py           # aw sync, aw push, aw pull (bidirectional sync)
-    ├── daemon_cmd.py         # aw daemon ...
+    ├── daemon_cmd.py         # ✅ aw daemon start/stop/status/install/uninstall/logs
+    ├── backup_cmd.py         # ✅ aw backup now/list/restore/verify/status
+    ├── cron_cmd.py           # ✅ aw cron list/add/run/logs/remove
     └── mcp_cmd.py            # ✅ aw mcp start, install
 ```
 
@@ -137,6 +140,13 @@ aw ask "question"                # Q&A over knowledge base via Ollama
 aw related <node-id>             # Graph traversal from a node
 aw why "decision"                # Trace causal chain
 aw health                        # Check KB integrity
+aw daemon start                  # Start background daemon
+aw daemon status                 # Check daemon status
+aw daemon install                # Register as system service
+aw backup now                    # Run backup now
+aw backup list                   # List backup snapshots
+aw cron list                     # List cron tasks
+aw cron run <task>               # Run a cron task now
 ```
 
 ## File Format: Chat (.md)
@@ -168,7 +178,7 @@ There are three main approaches...
 
 ## Current Phase
 
-Phase 7 complete. Next: Phase 8 (Daemon + File Watcher).
+Phase 8 complete. Next: Phase 9 (Retention + Antientropy).
 
 ### Completed
 - **Phase 0:** Scaffolding — pyproject.toml, directory structure, `aw --version` ✅
@@ -179,9 +189,10 @@ Phase 7 complete. Next: Phase 8 (Daemon + File Watcher).
 - **Phase 5:** Advanced search — Tiers 2-5 (BM25 via bm25s, fuzzy via rapidfuzz, semantic via ChromaDB+Ollama embeddings, hybrid fusion), EmbeddingProvider Protocol, OllamaEmbeddingProvider, VectorIndex, auto-tier selection, graceful degradation ✅
 - **Phase 6:** Knowledge graph — MAGMA 4-graph (GraphDB with temporal/entity/semantic/causal edges), regex entity extractor, intent detection, auto-edge generation on remember, `aw related/why/timeline`, real `aw_related`/`aw_graph_stats` MCP tools ✅
 - **Phase 7:** Local LLM integration — OllamaClient (HTTP API wrapper, graceful fallback), summarizer (chat + project), tagger (auto_tag + auto_categorize), Q&A (search + LLM answer with references), CLI: `aw summarize`, `aw autotag`, `aw ask` ✅
+- **Phase 8:** Daemon + file watcher + backup + cron — FileWatcher (watchdog, debounce, reindex+graph on change), TaskScheduler (APScheduler, 7 built-in actions, cron.log, missed job handling), BackupProvider Protocol, LocalBackupProvider (shutil, incremental manifest, snapshots), GDriveBackupProvider (google-api, OAuth2, MD5 incremental), TrayIcon (pystray, menu), IPC (Unix socket/Named pipe, CLI↔daemon), ServiceManager (systemd/launchd/Windows), CLI: `aw daemon start/stop/status/install/uninstall/logs`, `aw backup now/list/restore/verify/status`, `aw cron list/add/run/logs/remove` ✅
 
 ### Test coverage
-395 unit tests passing (models, fileutil, storage, config, registry, claude provider, import CLI, meta_db, search, search CLI, project CLI, context store, hooks, MCP tools, MCP CLI, embedding provider, vector index, advanced search tiers, fallback behavior, entities, graph, graph CLI, ollama client, summarizer, tagger, Q&A, LLM CLI).
+501 unit tests passing (models, fileutil, storage, config, registry, claude provider, import CLI, meta_db, search, search CLI, project CLI, context store, hooks, MCP tools, MCP CLI, embedding provider, vector index, advanced search tiers, fallback behavior, entities, graph, graph CLI, ollama client, summarizer, tagger, Q&A, LLM CLI, backup base, backup local, backup gdrive, watcher, scheduler, IPC, service, daemon CLI, backup CLI, cron CLI).
 
 ## Specs
 
@@ -205,7 +216,7 @@ Read these files BEFORE implementing any phase. They contain exact data models, 
 
 Key upcoming features documented in PLAN.md and SPEC.md:
 
-- **Phase 8:** Daemon + file watcher (watchdog, APScheduler, system tray, cron task scheduler)
+- **Phase 8:** Daemon + file watcher (done — see completed phases above)
 - **Phase 9:** Retention + antientropy (inbox suggestions, stale detection, duplicate finding)
 - **Phase 10:** ChatGPT provider import
 - **Phase 11:** v1.0 release (PyPI, Docker, docs)
