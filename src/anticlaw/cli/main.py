@@ -7,6 +7,7 @@ from anticlaw.cli.backup_cmd import backup_group
 from anticlaw.cli.cron_cmd import cron_group
 from anticlaw.cli.daemon_cmd import daemon_group
 from anticlaw.cli.import_cmd import import_group
+from anticlaw.cli.init_cmd import init_cmd
 from anticlaw.cli.graph_cmd import related_cmd, timeline_cmd, why_cmd
 from anticlaw.cli.llm_cmd import ask_cmd, autotag_cmd, summarize_cmd
 from anticlaw.cli.project_cmd import (
@@ -36,6 +37,7 @@ def cli() -> None:
     """AnticLaw — local-first knowledge base for LLM conversations."""
 
 
+cli.add_command(init_cmd)
 cli.add_command(import_group)
 cli.add_command(search_cmd)
 cli.add_command(list_cmd)

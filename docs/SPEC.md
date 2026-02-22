@@ -1,8 +1,8 @@
 # AnticLaw — Project Specification
 
-**Version:** 0.1-draft  
-**Date:** 2025-02-20  
-**Status:** Design phase
+**Version:** 1.0
+**Date:** 2025-02-22
+**Status:** v1.0 released
 
 ---
 
@@ -1031,41 +1031,39 @@ When enabled:
 - [ ] Auto-tag on import (deferred)
 - [x] CLI: `aw summarize`, `aw autotag`, `aw ask`
 
-### v0.6 — AnticLaw (1 week)
+### v0.6 — AnticLaw (1 week) ✅
 
-- [ ] `aw inbox` — classify unprocessed chats
-- [ ] `aw stale` — detect inactive projects
-- [ ] `aw duplicates` — find similar chats
-- [ ] `aw health` — integrity check
-- [ ] Retention lifecycle: archive, purge, restore
+- [x] `aw inbox` — classify unprocessed chats
+- [x] `aw stale` — detect inactive projects
+- [x] `aw duplicates` — find similar chats
+- [x] `aw health` — integrity check
+- [x] Retention lifecycle: archive, purge, restore
 
-### v0.7 — Second Provider (1 week)
+### v0.7 — Second Provider (1 week) ✅
 
-- [ ] ChatGPT Provider: parse their export format
-- [ ] Unified import: both providers produce same .md format
-- [ ] Cross-provider search
+- [x] ChatGPT Provider: parse their export format
+- [x] Unified import: both providers produce same .md format
+- [x] Cross-provider search
 
-### v0.8 — Gemini Provider (3 days)
+### v1.0 — Stable Release ✅
+
+- [x] 640+ unit tests passing
+- [x] Full documentation (README, QUICKSTART, TOOLS reference)
+- [x] PyPI metadata ready
+- [x] Interactive installer (`aw init --interactive`)
+- [x] Version 1.0.0
+
+### v1.1 — Planned
+
+- [ ] Local file source + HTTP API (`aw scan`, `aw api start`)
+- [ ] Web UI (`aw ui`)
+- [ ] Bidirectional LLM sync (`aw sync`, `aw push`, `aw pull`)
+
+### v1.2 — Planned
 
 - [ ] Gemini Provider: parse Google Takeout export
-- [ ] Three-provider unified search
-- [ ] Scraper Providers: Playwright-based supplementary data collection
-
-### v0.9 — Bidirectional Sync (1 week)
-
-- [ ] Push chats to cloud LLMs via API
-- [ ] Pull new chats from cloud APIs
-- [ ] File-as-interface: `status: draft` → auto-push → response in file
-- [ ] Push target routing (file > project > global)
-- [ ] API key management and validation
-
-### v1.0 — Stable Release
-
-- [ ] Full test coverage
-- [ ] Documentation
-- [ ] PyPI package
-- [ ] Interactive installer
-- [ ] Docker support
+- [ ] Voice input via Whisper (`aw listen`)
+- [ ] Alexa integration
 
 ---
 

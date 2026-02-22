@@ -82,6 +82,7 @@ src/anticlaw/
 │   └── static/              # Pre-built SPA bundle
 └── cli/
     ├── main.py              # ✅ Click entry point + version
+    ├── init_cmd.py           # ✅ aw init [path] [--interactive], config.yaml, .gitignore
     ├── import_cmd.py         # ✅ aw import claude <zip>, aw import chatgpt <zip>
     ├── search_cmd.py         # ✅ aw search <query> with filters
     ├── project_cmd.py        # ✅ aw list, show, move, tag, create, reindex
@@ -132,6 +133,8 @@ ruff format src/                 # Format
 
 # CLI (after install)
 aw --version                     # Version check
+aw init                          # Initialize knowledge base
+aw init --interactive            # Guided setup
 aw import claude export.zip      # Import Claude export
 aw import chatgpt export.zip    # Import ChatGPT export
 aw search "query"                # Search knowledge base
@@ -180,7 +183,7 @@ There are three main approaches...
 
 ## Current Phase
 
-Phase 10 complete. Next: Phase 11 (v1.0 Release).
+Phase 11 (v1.0) complete. Next: Phase 12 (Local files + HTTP API).
 
 ### Completed
 - **Phase 0:** Scaffolding — pyproject.toml, directory structure, `aw --version` ✅
@@ -194,9 +197,10 @@ Phase 10 complete. Next: Phase 11 (v1.0 Release).
 - **Phase 8:** Daemon + file watcher + backup + cron — FileWatcher (watchdog, debounce, reindex+graph on change), TaskScheduler (APScheduler, 7 built-in actions, cron.log, missed job handling), BackupProvider Protocol, LocalBackupProvider (shutil, incremental manifest, snapshots), GDriveBackupProvider (google-api, OAuth2, MD5 incremental), TrayIcon (pystray, menu), IPC (Unix socket/Named pipe, CLI↔daemon), ServiceManager (systemd/launchd/Windows), CLI: `aw daemon start/stop/status/install/uninstall/logs`, `aw backup now/list/restore/verify/status`, `aw cron list/add/run/logs/remove` ✅
 - **Phase 9:** Retention + antientropy — 3-zone retention lifecycle (preview/run/restore, importance decay with half-life), antientropy features (inbox_suggestions via tag matching, find_stale, find_duplicates via semantic similarity, health_check with 4 checks), CLI: `aw inbox [--auto]`, `aw stale [--days]`, `aw duplicates`, `aw health`, `aw retention preview/run`, `aw restore`, `aw stats` ✅
 - **Phase 10:** ChatGPT provider — ChatGPTProvider (parse ChatGPT export ZIP with mapping-tree message structure, Unix timestamps, role normalization user→human, model extraction from metadata, multipart/code content, system/tool message filtering), reuses scrub_text from Claude provider, CLI: `aw import chatgpt <zip> [--scrub]`, cross-provider search (results from both Claude and ChatGPT) ✅
+- **Phase 11:** v1.0 release polish — version bump to 1.0.0, `aw init [path] [--interactive]` (guided setup, config.yaml generation, .gitignore), README.md with architecture diagram/feature list/quickstart/badges, docs/QUICKSTART.md (step-by-step guide), docs/TOOLS.md (MCP tool reference for Claude Code), PyPI metadata (classifiers, urls, license), pyproject.toml polished ✅
 
 ### Test coverage
-627+ unit tests passing (models, fileutil, storage, config, registry, claude provider, chatgpt provider, import CLI (claude + chatgpt), cross-provider import, meta_db, search, search CLI, project CLI, context store, hooks, MCP tools, MCP CLI, embedding provider, vector index, advanced search tiers, fallback behavior, entities, graph, graph CLI, ollama client, summarizer, tagger, Q&A, LLM CLI, backup base, backup local, backup gdrive, watcher, scheduler, IPC, service, daemon CLI, backup CLI, cron CLI, retention, antientropy, knowledge CLI).
+640+ unit tests passing (models, fileutil, storage, config, registry, claude provider, chatgpt provider, import CLI (claude + chatgpt), cross-provider import, init CLI, meta_db, search, search CLI, project CLI, context store, hooks, MCP tools, MCP CLI, embedding provider, vector index, advanced search tiers, fallback behavior, entities, graph, graph CLI, ollama client, summarizer, tagger, Q&A, LLM CLI, backup base, backup local, backup gdrive, watcher, scheduler, IPC, service, daemon CLI, backup CLI, cron CLI, retention, antientropy, knowledge CLI).
 
 ## Specs
 
@@ -216,15 +220,14 @@ Read these files BEFORE implementing any phase. They contain exact data models, 
 6. **Tests for every module.** Write tests alongside code, not after. Minimum: happy path + error case.
 7. **After completing a task**, update this file's "Current Phase" section if the phase changed.
 
-## Planned Features (post-Phase 10)
+## Planned Features (post-Phase 11)
 
 Key upcoming features documented in PLAN.md and SPEC.md:
-- **Phase 11:** v1.0 release (PyPI, Docker, docs)
 - **Phase 12:** Local file source + HTTP API (`aw scan`, `aw api start`)
-- **Phase 13:** Voice input via Whisper (`aw listen`)
-- **Phase 14:** Alexa integration
-- **Phase 15:** Web UI (`aw ui`)
-- **Phase 16:** Gemini provider — Google Takeout import (`aw import gemini`)
-- **Phase 17:** Bidirectional LLM sync — push/pull chats via cloud APIs, file-as-interface pattern (`aw sync`, `aw push`, `aw pull`)
+- **Phase 13:** Web UI (`aw ui`)
+- **Phase 14:** Bidirectional LLM sync — push/pull chats via cloud APIs, file-as-interface pattern (`aw sync`, `aw push`, `aw pull`)
+- **Phase 15:** Gemini provider — Google Takeout import (`aw import gemini`)
+- **Phase 16:** Voice input via Whisper (`aw listen`)
+- **Phase 17:** Alexa integration
 - **Scraper providers:** Browser-based supplementary data collection (Playwright)
 - **6 provider families:** LLM, Backup, Embedding, Source, Input, Scraper
