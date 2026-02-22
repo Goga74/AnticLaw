@@ -35,7 +35,8 @@ src/anticlaw/
 │   ├── graph.py             # ✅ MAGMA 4-graph (temporal/entity/semantic/causal edges)
 │   ├── entities.py          # ✅ Regex entity extractor (paths, URLs, CamelCase, terms)
 │   ├── embeddings.py        # Ollama/OpenAI/local embedding providers
-│   └── retention.py         # 3-zone lifecycle (active → archive → purge)
+│   ├── retention.py         # ✅ 3-zone lifecycle (active → archive → purge)
+│   └── antientropy.py       # ✅ Inbox suggestions, stale detection, duplicates, health check
 ├── mcp/
 │   ├── server.py            # ✅ FastMCP server — 13 tools (all implemented)
 │   ├── context_store.py     # ✅ Context-as-variable storage + 6 chunking strategies
@@ -86,7 +87,7 @@ src/anticlaw/
     ├── project_cmd.py        # ✅ aw list, show, move, tag, create, reindex
     ├── graph_cmd.py           # ✅ aw related, aw why, aw timeline
     ├── llm_cmd.py             # ✅ aw summarize, aw autotag, aw ask
-    ├── knowledge_cmd.py      # aw inbox, stale, duplicates ...
+    ├── knowledge_cmd.py      # ✅ aw inbox, stale, duplicates, health, retention, stats
     ├── provider_cmd.py       # aw providers ...
     ├── sync_cmd.py           # aw sync, aw push, aw pull (bidirectional sync)
     ├── daemon_cmd.py         # ✅ aw daemon start/stop/status/install/uninstall/logs
@@ -178,7 +179,7 @@ There are three main approaches...
 
 ## Current Phase
 
-Phase 8 complete. Next: Phase 9 (Retention + Antientropy).
+Phase 9 complete. Next: Phase 10 (ChatGPT Provider).
 
 ### Completed
 - **Phase 0:** Scaffolding — pyproject.toml, directory structure, `aw --version` ✅
@@ -190,9 +191,10 @@ Phase 8 complete. Next: Phase 9 (Retention + Antientropy).
 - **Phase 6:** Knowledge graph — MAGMA 4-graph (GraphDB with temporal/entity/semantic/causal edges), regex entity extractor, intent detection, auto-edge generation on remember, `aw related/why/timeline`, real `aw_related`/`aw_graph_stats` MCP tools ✅
 - **Phase 7:** Local LLM integration — OllamaClient (HTTP API wrapper, graceful fallback), summarizer (chat + project), tagger (auto_tag + auto_categorize), Q&A (search + LLM answer with references), CLI: `aw summarize`, `aw autotag`, `aw ask` ✅
 - **Phase 8:** Daemon + file watcher + backup + cron — FileWatcher (watchdog, debounce, reindex+graph on change), TaskScheduler (APScheduler, 7 built-in actions, cron.log, missed job handling), BackupProvider Protocol, LocalBackupProvider (shutil, incremental manifest, snapshots), GDriveBackupProvider (google-api, OAuth2, MD5 incremental), TrayIcon (pystray, menu), IPC (Unix socket/Named pipe, CLI↔daemon), ServiceManager (systemd/launchd/Windows), CLI: `aw daemon start/stop/status/install/uninstall/logs`, `aw backup now/list/restore/verify/status`, `aw cron list/add/run/logs/remove` ✅
+- **Phase 9:** Retention + antientropy — 3-zone retention lifecycle (preview/run/restore, importance decay with half-life), antientropy features (inbox_suggestions via tag matching, find_stale, find_duplicates via semantic similarity, health_check with 4 checks), CLI: `aw inbox [--auto]`, `aw stale [--days]`, `aw duplicates`, `aw health`, `aw retention preview/run`, `aw restore`, `aw stats` ✅
 
 ### Test coverage
-501 unit tests passing (models, fileutil, storage, config, registry, claude provider, import CLI, meta_db, search, search CLI, project CLI, context store, hooks, MCP tools, MCP CLI, embedding provider, vector index, advanced search tiers, fallback behavior, entities, graph, graph CLI, ollama client, summarizer, tagger, Q&A, LLM CLI, backup base, backup local, backup gdrive, watcher, scheduler, IPC, service, daemon CLI, backup CLI, cron CLI).
+601+ unit tests passing (models, fileutil, storage, config, registry, claude provider, import CLI, meta_db, search, search CLI, project CLI, context store, hooks, MCP tools, MCP CLI, embedding provider, vector index, advanced search tiers, fallback behavior, entities, graph, graph CLI, ollama client, summarizer, tagger, Q&A, LLM CLI, backup base, backup local, backup gdrive, watcher, scheduler, IPC, service, daemon CLI, backup CLI, cron CLI, retention, antientropy, knowledge CLI).
 
 ## Specs
 
@@ -212,12 +214,9 @@ Read these files BEFORE implementing any phase. They contain exact data models, 
 6. **Tests for every module.** Write tests alongside code, not after. Minimum: happy path + error case.
 7. **After completing a task**, update this file's "Current Phase" section if the phase changed.
 
-## Planned Features (post-Phase 7)
+## Planned Features (post-Phase 9)
 
 Key upcoming features documented in PLAN.md and SPEC.md:
-
-- **Phase 8:** Daemon + file watcher (done — see completed phases above)
-- **Phase 9:** Retention + antientropy (inbox suggestions, stale detection, duplicate finding)
 - **Phase 10:** ChatGPT provider import
 - **Phase 11:** v1.0 release (PyPI, Docker, docs)
 - **Phase 12:** Local file source + HTTP API (`aw scan`, `aw api start`)
