@@ -258,11 +258,25 @@ class LLMProvider(Protocol):
 - Project Knowledge files not exported — requires Playwright.
 - Deleted chats not included.
 
-### 5.3 ChatGPT Provider
+### 5.3 ChatGPT Provider ✅
 
 **Import source:** Settings → Data controls → Export data → ZIP with `conversations.json`.
 
 Different JSON schema from Claude — separate parser needed. Same output: `.md` files with YAML frontmatter.
+
+**Capabilities:**
+- `export_bulk` — parse ChatGPT export ZIP
+
+**ChatGPT JSON schema** (key differences from Claude):
+- Messages stored in `mapping` dict (tree structure with parent/children), not a flat array
+- Timestamps are Unix epoch floats (e.g. `1739889000.0`), not ISO strings
+- Roles: `user` (→ `human`), `assistant`, `system` (skipped), `tool` (skipped)
+- Content: `{"content_type": "text", "parts": ["..."]}` (also supports `code`, `multimodal_text`)
+- Model info in `message.metadata.model_slug` (e.g. `gpt-4`, `gpt-4o`)
+- Conversation ID: `conversation_id` field (or `id` as fallback)
+- Tree walking: follows last child from root to reconstruct linear conversation order
+
+**CLI:** `aw import chatgpt <export.zip> [--scrub] [--home PATH]`
 
 ### 5.4 Gemini Provider
 
@@ -727,7 +741,7 @@ anticlaw/
 │   │   ├── llm/
 │   │   │   ├── base.py          # ✅ LLMProvider Protocol + ProviderInfo + Capability
 │   │   │   ├── claude.py        # ✅ Parse conversations.json + scrubbing
-│   │   │   ├── chatgpt.py       # ChatGPT import/export
+│   │   │   ├── chatgpt.py       # ✅ ChatGPT import (mapping-tree parser)
 │   │   │   └── ollama.py        # Local LLM operations
 │   │   ├── backup/
 │   │   │   ├── base.py          # BackupProvider Protocol

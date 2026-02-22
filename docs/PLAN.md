@@ -727,18 +727,20 @@ Goal: Import ChatGPT export, same file format output.
 
 **Files:**
 
-`src/anticlaw/providers/chatgpt.py`:
-- [ ] Parse ChatGPT export format (different JSON schema)
-- [ ] Map to same `ChatData` model
-- [ ] Handle: conversations, titles, model info
+`src/anticlaw/providers/llm/chatgpt.py`:
+- [x] Parse ChatGPT export format (mapping-tree message structure, Unix timestamps)
+- [x] Map to same `ChatData` model
+- [x] Handle: conversations, titles, model info (from metadata.model_slug)
+- [x] Handle: system/tool message filtering, multipart content, code content
+- [x] Reuse scrub_text from Claude provider
 
-CLI:
-- [ ] `aw import chatgpt <export.zip> [--scrub]`
+CLI (`src/anticlaw/cli/import_cmd.py`):
+- [x] `aw import chatgpt <export.zip> [--scrub]`
 
 **Tests:**
-- [ ] Parse sample ChatGPT export
-- [ ] Output .md files identical in format to Claude imports
-- [ ] Cross-provider search finds chats from both
+- [x] Parse sample ChatGPT export (31 unit tests)
+- [x] Output .md files identical in format to Claude imports
+- [x] Cross-provider search finds chats from both (import CLI test)
 
 **Deliverable:** `aw search "topic"` returns results from both Claude and ChatGPT chats
 
@@ -1334,7 +1336,7 @@ Ollama       → ollama.com (for embeddings + local LLM)
 | 7 | 18–19 | Local LLM | `aw summarize`, `aw autotag`, `aw ask` |
 | 8 | 20–23 | Daemon + tray | `aw daemon install`, auto-indexing, backup |
 | 9 | 24–25 | Antientropy | `aw inbox`, `aw stale`, `aw duplicates`, `aw health` |
-| 10 | 26–27 | ChatGPT provider | `aw import chatgpt` |
+| 10 | 26–27 | ChatGPT provider ✅ | `aw import chatgpt` |
 | 11 | 28–30 | v1.0 Release | PyPI, Docker, docs |
 | **12** | **31–35** | **Local files + HTTP API** | **`aw scan`, `aw api start`** |
 | **13** | **36–38** | **Voice input (Whisper)** | **`aw listen`** |
