@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from anticlaw.core.meta_db import MetaDB
-from anticlaw.core.storage import ChatStorage, _RESERVED_DIRS
+from anticlaw.core.storage import _RESERVED_DIRS
 
 log = logging.getLogger(__name__)
 
@@ -217,7 +217,7 @@ def _suggest_via_llm(
     """Suggest project via LLM categorization."""
     try:
         from anticlaw.core.storage import ChatStorage
-        from anticlaw.llm.ollama_client import OllamaClient, OllamaNotAvailable
+        from anticlaw.llm.ollama_client import OllamaClient
         from anticlaw.llm.tagger import auto_categorize
 
         file_path = Path(chat_row["file_path"])
@@ -408,7 +408,7 @@ def _find_duplicates_semantic(
                 results = vi.search_chats(embedding, n_results=5)
                 if not results or "ids" not in results:
                     continue
-                for rid, dist in zip(results["ids"][0], results["distances"][0]):
+                for rid, dist in zip(results["ids"][0], results["distances"][0], strict=False):
                     if rid == chat_id:
                         continue
                     # ChromaDB cosine distance: 0 = identical, 2 = opposite
@@ -501,7 +501,7 @@ def _find_exact_title_duplicates(
             if t:
                 titles.setdefault(t, []).append(c)
 
-        for t, group in titles.items():
+        for _t, group in titles.items():
             if len(group) < 2:
                 continue
             for i, a in enumerate(group):

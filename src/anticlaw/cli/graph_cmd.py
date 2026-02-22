@@ -7,7 +7,7 @@ from pathlib import Path
 import click
 
 from anticlaw.core.config import resolve_home
-from anticlaw.core.graph import GraphDB, intent_detect
+from anticlaw.core.graph import GraphDB
 
 
 def _get_graph(home: Path) -> GraphDB:

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 import platform
@@ -75,10 +76,8 @@ class IPCServer:
         # Cleanup socket file
         sock_path = ipc_path(self.home)
         if not _IS_WINDOWS and sock_path.exists():
-            try:
+            with contextlib.suppress(OSError):
                 sock_path.unlink()
-            except OSError:
-                pass
 
         log.info("IPC server stopped")
 
@@ -88,7 +87,6 @@ class IPCServer:
 
     def _accept_loop(self) -> None:
         """Accept incoming connections."""
-        import socket
 
         while self._running:
             try:
@@ -96,7 +94,7 @@ class IPCServer:
                 threading.Thread(
                     target=self._handle_connection, args=(conn,), daemon=True,
                 ).start()
-            except socket.timeout:
+            except TimeoutError:
                 continue
             except OSError:
                 if self._running:

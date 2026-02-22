@@ -4,7 +4,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from anticlaw.llm.ollama_client import OllamaClient, OllamaError, OllamaNotAvailable
+from anticlaw.llm.ollama_client import OllamaClient, OllamaError, OllamaNotAvailableError
 
 
 class TestOllamaClientInit:
@@ -74,7 +74,7 @@ class TestAvailableModels:
         mock_get.side_effect = httpx.ConnectError("refused")
 
         client = OllamaClient()
-        with pytest.raises(OllamaNotAvailable, match="not reachable"):
+        with pytest.raises(OllamaNotAvailableError, match="not reachable"):
             client.available_models()
 
     @patch("httpx.get")
@@ -128,7 +128,7 @@ class TestGenerate:
         mock_post.side_effect = httpx.ConnectError("refused")
 
         client = OllamaClient()
-        with pytest.raises(OllamaNotAvailable):
+        with pytest.raises(OllamaNotAvailableError):
             client.generate("test")
 
     @patch("httpx.post")

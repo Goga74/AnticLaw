@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 import time
@@ -310,10 +311,8 @@ class TaskScheduler:
         manifest_path = self.home / ".acl" / f"backup_manifest_{provider_name}.json"
         manifest = None
         if manifest_path.exists():
-            try:
+            with contextlib.suppress(json.JSONDecodeError, OSError):
                 manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-            except (json.JSONDecodeError, OSError):
-                pass
 
         result, new_manifest = provider.backup(self.home, manifest)
 
@@ -348,7 +347,7 @@ class TaskScheduler:
                 issues.append(f"{orphans} orphaned index entries")
 
             # Check for unindexed files
-            from anticlaw.core.storage import ChatStorage, _RESERVED_DIRS
+            from anticlaw.core.storage import _RESERVED_DIRS
 
             indexed_paths = {row["file_path"] for row in rows}
             unindexed = 0
@@ -389,9 +388,9 @@ class TaskScheduler:
         auto_summarize = params.get("auto_summarize", True)
 
         try:
-            from anticlaw.core.storage import ChatStorage
-            from anticlaw.llm.ollama_client import OllamaClient, OllamaNotAvailable
             from anticlaw.core.config import load_config
+            from anticlaw.core.storage import ChatStorage
+            from anticlaw.llm.ollama_client import OllamaClient
 
             config = load_config(self.home / ".acl" / "config.yaml")
             llm_config = config.get("llm", {})

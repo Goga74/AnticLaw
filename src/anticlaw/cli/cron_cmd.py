@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 from pathlib import Path
 
 import click
@@ -100,10 +101,8 @@ def cron_add(name: str, schedule: str, action: str, home: Path | None, params: s
     # Only write the daemon section to avoid overwriting other config
     user_config: dict = {}
     if config_path.exists():
-        try:
+        with contextlib.suppress(Exception):
             user_config = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
-        except Exception:
-            pass
 
     user_config.setdefault("daemon", {})["tasks"] = tasks
     config_path.write_text(
@@ -204,10 +203,8 @@ def cron_remove(name: str, home: Path | None) -> None:
     # Write back
     user_config: dict = {}
     if config_path.exists():
-        try:
+        with contextlib.suppress(Exception):
             user_config = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
-        except Exception:
-            pass
 
     user_config.setdefault("daemon", {})["tasks"] = new_tasks
     config_path.parent.mkdir(parents=True, exist_ok=True)

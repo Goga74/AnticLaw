@@ -2,14 +2,15 @@
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import os
 import platform
 import re
 import tempfile
+from collections.abc import Generator
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Generator
 
 log = logging.getLogger(__name__)
 
@@ -80,10 +81,8 @@ def atomic_write(path: Path, content: str, encoding: str = "utf-8") -> None:
         _replace(tmp_path, path)
     except BaseException:
         # Clean up temp file on failure
-        try:
+        with contextlib.suppress(OSError):
             os.unlink(tmp_path)
-        except OSError:
-            pass
         raise
 
     ensure_file_permissions(path)
@@ -112,33 +111,25 @@ def file_lock(path: Path) -> Generator[None, None, None]:
 def _unix_lock(lock_path: Path) -> Generator[None, None, None]:
     import fcntl
 
-    fd = open(lock_path, "w")
-    try:
-        fcntl.flock(fd, fcntl.LOCK_EX)
-        yield
-    finally:
-        fcntl.flock(fd, fcntl.LOCK_UN)
-        fd.close()
+    with open(lock_path, "w") as fd:
         try:
-            lock_path.unlink()
-        except OSError:
-            pass
+            fcntl.flock(fd, fcntl.LOCK_EX)
+            yield
+        finally:
+            fcntl.flock(fd, fcntl.LOCK_UN)
+    with contextlib.suppress(OSError):
+        lock_path.unlink()
 
 
 def _windows_lock(lock_path: Path) -> Generator[None, None, None]:
     import msvcrt
 
-    fd = open(lock_path, "w")
-    try:
-        msvcrt.locking(fd.fileno(), msvcrt.LK_LOCK, 1)
-        yield
-    finally:
+    with open(lock_path, "w") as fd:
         try:
-            msvcrt.locking(fd.fileno(), msvcrt.LK_UNLCK, 1)
-        except OSError:
-            pass
-        fd.close()
-        try:
-            lock_path.unlink()
-        except OSError:
-            pass
+            msvcrt.locking(fd.fileno(), msvcrt.LK_LOCK, 1)
+            yield
+        finally:
+            with contextlib.suppress(OSError):
+                msvcrt.locking(fd.fileno(), msvcrt.LK_UNLCK, 1)
+    with contextlib.suppress(OSError):
+        lock_path.unlink()

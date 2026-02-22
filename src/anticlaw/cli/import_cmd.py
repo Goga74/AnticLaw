@@ -9,7 +9,7 @@ import click
 
 from anticlaw.core.config import resolve_home
 from anticlaw.core.fileutil import safe_filename
-from anticlaw.core.models import Chat, ChatData, ChatMessage
+from anticlaw.core.models import Chat, ChatData
 from anticlaw.core.storage import ChatStorage
 from anticlaw.providers.llm.chatgpt import ChatGPTProvider
 from anticlaw.providers.llm.claude import ClaudeProvider
@@ -99,7 +99,7 @@ def import_claude(
 
     # Summary
     click.echo()
-    click.echo(f"Import complete:")
+    click.echo("Import complete:")
     click.echo(f"  Imported: {imported}")
     if skipped:
         click.echo(f"  Skipped (already exist): {skipped}")
@@ -108,9 +108,9 @@ def import_claude(
         click.echo(f"  Mapped to projects: {mapped}")
         click.echo(f"  Sent to _inbox: {len(chat_data_list) - mapped}")
     else:
-        click.echo(f"  All sent to: _inbox/")
+        click.echo("  All sent to: _inbox/")
     if scrub:
-        click.echo(f"  Secret scrubbing: enabled")
+        click.echo("  Secret scrubbing: enabled")
 
 
 @import_group.command("chatgpt")
@@ -170,13 +170,13 @@ def import_chatgpt(
 
     # Summary
     click.echo()
-    click.echo(f"Import complete:")
+    click.echo("Import complete:")
     click.echo(f"  Imported: {imported}")
     if skipped:
         click.echo(f"  Skipped (already exist): {skipped}")
-    click.echo(f"  All sent to: _inbox/")
+    click.echo("  All sent to: _inbox/")
     if scrub:
-        click.echo(f"  Secret scrubbing: enabled")
+        click.echo("  Secret scrubbing: enabled")
 
 
 def _chat_data_to_chat(data: ChatData) -> Chat:

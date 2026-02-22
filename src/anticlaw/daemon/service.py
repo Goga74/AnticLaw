@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import os
 import platform
@@ -39,10 +40,8 @@ def remove_pid(home: Path) -> None:
     """Remove the PID file."""
     pid_path = get_pid_path(home)
     if pid_path.exists():
-        try:
+        with contextlib.suppress(OSError):
             pid_path.unlink()
-        except OSError:
-            pass
 
 
 def is_process_running(pid: int) -> bool:
@@ -94,7 +93,10 @@ def uninstall_service(home: Path) -> str:
 
 def _install_windows(home: Path) -> str:
     """Create a Windows startup shortcut using pythonw.exe."""
-    startup_dir = Path(os.environ.get("APPDATA", "")) / "Microsoft" / "Windows" / "Start Menu" / "Programs" / "Startup"
+    startup_dir = (
+        Path(os.environ.get("APPDATA", ""))
+        / "Microsoft" / "Windows" / "Start Menu" / "Programs" / "Startup"
+    )
     if not startup_dir.exists():
         return f"Startup directory not found: {startup_dir}"
 
@@ -106,14 +108,20 @@ def _install_windows(home: Path) -> str:
         pythonw = python_exe
 
     bat_path = startup_dir / "anticlaw-daemon.bat"
-    bat_content = f'@echo off\nstart /B "" "{pythonw}" -m anticlaw.cli.main daemon start --home "{home}"\n'
+    bat_content = (
+        f'@echo off\nstart /B "" "{pythonw}"'
+        f' -m anticlaw.cli.main daemon start --home "{home}"\n'
+    )
     bat_path.write_text(bat_content, encoding="utf-8")
 
     return f"Created startup script: {bat_path}"
 
 
 def _uninstall_windows(home: Path) -> str:
-    startup_dir = Path(os.environ.get("APPDATA", "")) / "Microsoft" / "Windows" / "Start Menu" / "Programs" / "Startup"
+    startup_dir = (
+        Path(os.environ.get("APPDATA", ""))
+        / "Microsoft" / "Windows" / "Start Menu" / "Programs" / "Startup"
+    )
     bat_path = startup_dir / "anticlaw-daemon.bat"
     if bat_path.exists():
         bat_path.unlink()

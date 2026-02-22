@@ -8,7 +8,7 @@ from pathlib import Path
 
 from anticlaw.core.meta_db import MetaDB, SearchResult
 from anticlaw.core.search import search
-from anticlaw.llm.ollama_client import OllamaClient, OllamaNotAvailable
+from anticlaw.llm.ollama_client import OllamaClient, OllamaNotAvailableError
 
 log = logging.getLogger(__name__)
 
@@ -91,7 +91,7 @@ def ask(
     try:
         answer = client.generate(prompt)
         return QAResult(answer=answer, sources=used_results)
-    except OllamaNotAvailable:
+    except OllamaNotAvailableError:
         log.warning("Ollama not available — cannot answer question")
         return QAResult(
             answer="",

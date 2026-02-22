@@ -11,7 +11,7 @@ class OllamaError(Exception):
     """Raised when Ollama API returns an error."""
 
 
-class OllamaNotAvailable(OllamaError):
+class OllamaNotAvailableError(OllamaError):
     """Raised when Ollama server is not reachable."""
 
 
@@ -56,7 +56,7 @@ class OllamaClient:
             data = resp.json()
             return [m["name"] for m in data.get("models", [])]
         except (httpx.ConnectError, httpx.TimeoutException, OSError) as e:
-            raise OllamaNotAvailable(
+            raise OllamaNotAvailableError(
                 f"Ollama not reachable at {self._base_url}: {e}"
             ) from e
         except httpx.HTTPStatusError as e:
@@ -73,7 +73,7 @@ class OllamaClient:
             Generated text response.
 
         Raises:
-            OllamaNotAvailable: If Ollama server is not reachable.
+            OllamaNotAvailableError: If Ollama server is not reachable.
             OllamaError: If the API returns an error.
         """
         import httpx
@@ -93,7 +93,7 @@ class OllamaClient:
             data = resp.json()
             return data.get("response", "").strip()
         except (httpx.ConnectError, httpx.TimeoutException, OSError) as e:
-            raise OllamaNotAvailable(
+            raise OllamaNotAvailableError(
                 f"Ollama not reachable at {self._base_url}: {e}"
             ) from e
         except httpx.HTTPStatusError as e:

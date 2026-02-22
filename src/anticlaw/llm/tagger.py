@@ -6,7 +6,7 @@ import logging
 import re
 
 from anticlaw.core.models import Chat
-from anticlaw.llm.ollama_client import OllamaClient, OllamaNotAvailable
+from anticlaw.llm.ollama_client import OllamaClient, OllamaNotAvailableError
 
 log = logging.getLogger(__name__)
 
@@ -100,7 +100,7 @@ def auto_tag(
     try:
         raw = client.generate(prompt)
         return _parse_tags(raw)
-    except OllamaNotAvailable:
+    except OllamaNotAvailableError:
         log.warning("Ollama not available — cannot auto-tag chat '%s'", chat.title)
         return []
 
@@ -143,6 +143,6 @@ def auto_categorize(
         # Remove quotes and extra punctuation
         suggestion = suggestion.strip("'\".")
         return suggestion
-    except OllamaNotAvailable:
+    except OllamaNotAvailableError:
         log.warning("Ollama not available — cannot categorize chat '%s'", chat.title)
         return ""

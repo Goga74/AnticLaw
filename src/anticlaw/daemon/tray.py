@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import logging
 import subprocess
-import sys
 import threading
 from pathlib import Path
 
@@ -40,7 +39,6 @@ class TrayIcon:
         """Start the system tray icon."""
         try:
             import pystray
-            from PIL import Image
         except ImportError as e:
             raise RuntimeError(
                 f"pystray/Pillow not installed: {e}. "

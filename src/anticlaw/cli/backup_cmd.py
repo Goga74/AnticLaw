@@ -162,7 +162,10 @@ def backup_list(home: Path | None, provider: str | None) -> None:
 )
 @click.option("--provider", required=True, help="Provider to restore from.")
 @click.option("--snapshot", default=None, help="Specific snapshot ID (default: latest).")
-@click.option("--target", type=click.Path(path_type=Path), default=None, help="Restore target directory.")
+@click.option(
+    "--target", type=click.Path(path_type=Path), default=None,
+    help="Restore target directory.",
+)
 def backup_restore(
     home: Path | None, provider: str, snapshot: str | None, target: Path | None,
 ) -> None:

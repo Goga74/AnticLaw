@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import json
+import contextlib
 import logging
 import os
 import shutil
@@ -42,9 +42,7 @@ class LocalBackupProvider:
     def auth(self, config: dict) -> bool:
         """Local backup needs no auth — just verify path is writable."""
         path = Path(config.get("path", str(self._target_path))).expanduser()
-        if not path.parent.exists():
-            return False
-        return True
+        return path.parent.exists()
 
     def backup(
         self,
@@ -118,10 +116,8 @@ class LocalBackupProvider:
 
         # If nothing was copied, remove empty snapshot dir
         if copied == 0 and not errors:
-            try:
+            with contextlib.suppress(OSError):
                 shutil.rmtree(str(snapshot_dir))
-            except OSError:
-                pass
 
         duration = time.monotonic() - start
         new_manifest = {

@@ -33,7 +33,10 @@ _SCRUB_PATTERNS: list[tuple[re.Pattern, str]] = [
     ),
     # Generic token/secret/password in assignments
     (
-        re.compile(r"(?:password|passwd|token|secret|api_key)\s*[=:]\s*[\"']?[^\s\"']{8,}[\"']?", re.IGNORECASE),
+        re.compile(
+            r"(?:password|passwd|token|secret|api_key)\s*[=:]\s*[\"']?[^\s\"']{8,}[\"']?",
+            re.IGNORECASE,
+        ),
         "[REDACTED:credential]",
     ),
 ]

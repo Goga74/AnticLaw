@@ -102,7 +102,7 @@ class MetaDB:
 
         Returns (chats_indexed, projects_indexed).
         """
-        from anticlaw.core.storage import ChatStorage, _RESERVED_DIRS
+        from anticlaw.core.storage import _RESERVED_DIRS, ChatStorage
 
         storage = ChatStorage(home)
         chats_count = 0
@@ -162,10 +162,7 @@ class MetaDB:
         exact: bool = False,
     ) -> list[SearchResult]:
         """Search chats via FTS5 MATCH."""
-        if exact:
-            fts_query = f'"{query}"'
-        else:
-            fts_query = query
+        fts_query = f'"{query}"' if exact else query
 
         sql = """
             SELECT f.chat_id, c.title, c.project_id,
@@ -206,7 +203,7 @@ class MetaDB:
         for row in rows:
             # Filter by tags in Python (JSON array in DB)
             if tags:
-                chat_tags = json.loads(row["tags"] if "tags" in row.keys() else "[]")
+                chat_tags = json.loads(row["tags"] if "tags" in row.keys() else "[]")  # noqa: SIM118
                 if not chat_tags:
                     # Re-read from chats table
                     chat_row = self.conn.execute(

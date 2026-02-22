@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import hashlib
-import io
 import json
 import logging
 import os
@@ -56,13 +55,15 @@ class GDriveBackupProvider:
         if self._service is not None:
             return self._service
         try:
-            from googleapiclient.discovery import build
-
             import keyring
+            from googleapiclient.discovery import build
 
             token_json = keyring.get_password("anticlaw", "gdrive_token")
             if not token_json:
-                raise RuntimeError("No Google Drive token in keyring. Run 'aw backup auth gdrive' first.")
+                raise RuntimeError(
+                    "No Google Drive token in keyring. "
+                    "Run 'aw backup auth gdrive' first."
+                )
 
             from google.oauth2.credentials import Credentials
 

@@ -3,7 +3,7 @@
 from unittest.mock import MagicMock, patch
 
 from anticlaw.core.models import Chat, ChatMessage
-from anticlaw.llm.ollama_client import OllamaClient, OllamaNotAvailable
+from anticlaw.llm.ollama_client import OllamaClient, OllamaNotAvailableError
 from anticlaw.llm.summarizer import summarize_chat, summarize_project
 
 
@@ -41,7 +41,7 @@ class TestSummarizeChat:
 
     def test_graceful_fallback_when_ollama_unavailable(self):
         client = MagicMock(spec=OllamaClient)
-        client.generate.side_effect = OllamaNotAvailable("not running")
+        client.generate.side_effect = OllamaNotAvailableError("not running")
 
         chat = _make_chat()
         result = summarize_chat(chat, client=client)
@@ -110,7 +110,7 @@ class TestSummarizeProject:
 
     def test_graceful_fallback_when_ollama_unavailable(self):
         client = MagicMock(spec=OllamaClient)
-        client.generate.side_effect = OllamaNotAvailable("not running")
+        client.generate.side_effect = OllamaNotAvailableError("not running")
 
         chats = [Chat(title="Test", summary="Summary.")]
         result = summarize_project("test", "", chats, client=client)

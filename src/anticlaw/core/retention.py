@@ -3,18 +3,15 @@
 from __future__ import annotations
 
 import gzip
-import json
 import logging
 import math
-import shutil
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 
 from anticlaw.core.config import load_config
 from anticlaw.core.meta_db import MetaDB
-from anticlaw.core.models import Importance, Status
-from anticlaw.core.storage import ChatStorage
+from anticlaw.core.models import Importance
 
 log = logging.getLogger(__name__)
 
@@ -313,10 +310,10 @@ def restore(home: Path, chat_id: str) -> Path | None:
 
         # Determine target directory
         project_id = chat_row.get("project_id", "_inbox")
-        if project_id and project_id != "_inbox":
-            target_dir = home / project_id
-        else:
-            target_dir = home / "_inbox"
+        target_dir = (
+            home / project_id if project_id and project_id != "_inbox"
+            else home / "_inbox"
+        )
         target_dir.mkdir(parents=True, exist_ok=True)
 
         # Decompress

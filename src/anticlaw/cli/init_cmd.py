@@ -58,10 +58,7 @@ def init_cmd(path: Path | None, interactive: bool) -> None:
     storage.init_home()
 
     # Build config
-    if interactive:
-        config = _interactive_setup()
-    else:
-        config = _default_config()
+    config = _interactive_setup() if interactive else _default_config()
 
     # Write config.yaml
     cfg_path = config_path(home)
@@ -79,10 +76,10 @@ def init_cmd(path: Path | None, interactive: bool) -> None:
     click.echo()
     click.echo("Directory structure:")
     click.echo(f"  {home}/")
-    click.echo(f"    .acl/          config, databases, cache")
-    click.echo(f"    _inbox/        imported chats (unsorted)")
-    click.echo(f"    _archive/      archived chats")
-    click.echo(f"    .gitignore     git-safe defaults")
+    click.echo("    .acl/          config, databases, cache")
+    click.echo("    _inbox/        imported chats (unsorted)")
+    click.echo("    _archive/      archived chats")
+    click.echo("    .gitignore     git-safe defaults")
     click.echo()
     click.echo("Next steps:")
     click.echo("  aw import claude <export.zip>     Import Claude conversations")
@@ -132,7 +129,9 @@ def _interactive_setup() -> dict:
 
     # Local LLM
     click.echo()
-    use_ollama = click.confirm("Use Ollama for local AI (summarization, tagging, Q&A)?", default=False)
+    use_ollama = click.confirm(
+        "Use Ollama for local AI (summarization, tagging, Q&A)?", default=False,
+    )
     if use_ollama:
         model = click.prompt(
             "  Ollama model for text generation",
@@ -147,10 +146,14 @@ def _interactive_setup() -> dict:
 
     # Daemon
     click.echo()
-    use_daemon = click.confirm("Enable background daemon (file watching, auto-indexing)?", default=False)
+    use_daemon = click.confirm(
+        "Enable background daemon (file watching, auto-indexing)?", default=False,
+    )
     config["daemon"]["enabled"] = use_daemon
     if use_daemon:
-        config["daemon"]["autostart"] = click.confirm("  Auto-start daemon on login?", default=False)
+        config["daemon"]["autostart"] = click.confirm(
+            "  Auto-start daemon on login?", default=False,
+        )
 
     click.echo()
     return config

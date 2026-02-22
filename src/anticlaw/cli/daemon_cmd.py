@@ -2,10 +2,8 @@
 
 from __future__ import annotations
 
-import json
 import logging
 import signal
-import sys
 import time
 from pathlib import Path
 
@@ -51,7 +49,7 @@ def daemon_start(home: Path | None, no_tray: bool, no_watch: bool, no_schedule: 
     log.info("Daemon starting (home=%s)", home_path)
 
     # Write PID
-    from anticlaw.daemon.service import write_pid, remove_pid
+    from anticlaw.daemon.service import remove_pid, write_pid
 
     write_pid(home_path)
     click.echo(f"Daemon started (home={home_path})")
@@ -223,19 +221,18 @@ def daemon_stop(home: Path | None) -> None:
     if resp.get("status") == "ok":
         click.echo("Daemon shutdown signal sent.")
         # Also kill the process
-        from anticlaw.daemon.service import read_pid, is_process_running
+        from anticlaw.daemon.service import is_process_running, read_pid
 
         pid = read_pid(home_path)
         if pid and is_process_running(pid):
+            import contextlib
             import os
-            try:
+            with contextlib.suppress(OSError):
                 os.kill(pid, signal.SIGTERM)
-            except OSError:
-                pass
         return
 
     # Fallback: try PID file
-    from anticlaw.daemon.service import read_pid, is_process_running, remove_pid
+    from anticlaw.daemon.service import is_process_running, read_pid, remove_pid
 
     pid = read_pid(home_path)
     if pid and is_process_running(pid):
@@ -275,7 +272,7 @@ def daemon_status(home: Path | None) -> None:
         return
 
     # Fallback: check PID
-    from anticlaw.daemon.service import read_pid, is_process_running
+    from anticlaw.daemon.service import is_process_running, read_pid
 
     pid = read_pid(home_path)
     if pid and is_process_running(pid):

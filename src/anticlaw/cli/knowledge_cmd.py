@@ -8,7 +8,6 @@ import click
 
 from anticlaw.core.config import resolve_home
 
-
 # --- aw inbox [--auto] ---
 
 
@@ -155,7 +154,7 @@ def health_cmd(home: Path | None) -> None:
 
     report = health_check(home_path)
 
-    click.echo(f"KB Health Report")
+    click.echo("KB Health Report")
     click.echo(f"  Chats on disk: {report.total_chats}")
     click.echo(f"  Chats indexed: {report.indexed_chats}")
     click.echo(f"  Projects: {report.total_projects}")
@@ -302,6 +301,6 @@ def stats_cmd(home: Path | None) -> None:
     click.echo(f"  Tags:       {s.total_tags}")
 
     if s.top_tags:
-        click.echo(f"\n  Top tags:")
+        click.echo("\n  Top tags:")
         for tag, count in s.top_tags:
             click.echo(f"    {tag}: {count}")

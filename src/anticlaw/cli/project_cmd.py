@@ -11,7 +11,6 @@ from anticlaw.core.config import resolve_home
 from anticlaw.core.meta_db import MetaDB
 from anticlaw.core.storage import ChatStorage
 
-
 # --- aw list [project] ---
 
 

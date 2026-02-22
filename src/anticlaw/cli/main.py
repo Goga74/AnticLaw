@@ -6,18 +6,9 @@ from anticlaw import __version__
 from anticlaw.cli.backup_cmd import backup_group
 from anticlaw.cli.cron_cmd import cron_group
 from anticlaw.cli.daemon_cmd import daemon_group
+from anticlaw.cli.graph_cmd import related_cmd, timeline_cmd, why_cmd
 from anticlaw.cli.import_cmd import import_group
 from anticlaw.cli.init_cmd import init_cmd
-from anticlaw.cli.graph_cmd import related_cmd, timeline_cmd, why_cmd
-from anticlaw.cli.llm_cmd import ask_cmd, autotag_cmd, summarize_cmd
-from anticlaw.cli.project_cmd import (
-    create_group,
-    list_cmd,
-    move_cmd,
-    reindex_cmd,
-    show_cmd,
-    tag_cmd,
-)
 from anticlaw.cli.knowledge_cmd import (
     duplicates_cmd,
     health_cmd,
@@ -27,7 +18,16 @@ from anticlaw.cli.knowledge_cmd import (
     stale_cmd,
     stats_cmd,
 )
+from anticlaw.cli.llm_cmd import ask_cmd, autotag_cmd, summarize_cmd
 from anticlaw.cli.mcp_cmd import mcp_group
+from anticlaw.cli.project_cmd import (
+    create_group,
+    list_cmd,
+    move_cmd,
+    reindex_cmd,
+    show_cmd,
+    tag_cmd,
+)
 from anticlaw.cli.search_cmd import search_cmd
 
 

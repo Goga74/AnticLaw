@@ -17,7 +17,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from anticlaw.core.entities import extract_entities, has_causal_language
-from anticlaw.core.models import Edge, EdgeType, Insight
+from anticlaw.core.models import EdgeType, Insight
 
 log = logging.getLogger(__name__)
 
@@ -89,7 +89,7 @@ def _parse_dt(s: str) -> datetime | None:
 
 def _cosine_similarity(a: list[float], b: list[float]) -> float:
     """Compute cosine similarity between two vectors (pure Python)."""
-    dot = sum(x * y for x, y in zip(a, b))
+    dot = sum(x * y for x, y in zip(a, b, strict=False))
     norm_a = sum(x * x for x in a) ** 0.5
     norm_b = sum(x * x for x in b) ** 0.5
     if norm_a == 0 or norm_b == 0:
@@ -184,8 +184,14 @@ class GraphDB:
             (
                 insight.id,
                 insight.content,
-                str(insight.category.value if hasattr(insight.category, "value") else insight.category),
-                str(insight.importance.value if hasattr(insight.importance, "value") else insight.importance),
+                str(
+                    insight.category.value
+                    if hasattr(insight.category, "value") else insight.category
+                ),
+                str(
+                    insight.importance.value
+                    if hasattr(insight.importance, "value") else insight.importance
+                ),
                 tags_json,
                 insight.project_id,
                 insight.chat_id,
@@ -198,7 +204,10 @@ class GraphDB:
         self.conn.commit()
 
         # Auto-generate edges
-        created_dt = insight.created if isinstance(insight.created, datetime) else _parse_dt(created_str)
+        created_dt = (
+            insight.created if isinstance(insight.created, datetime)
+            else _parse_dt(created_str)
+        )
         self._auto_temporal_edges(insight.id, created_dt)
         self._auto_entity_edges(insight.id, insight.content)
         if embedder and embedding_json:
@@ -478,7 +487,8 @@ class GraphDB:
     ) -> int:
         """Find top-K similar nodes and create semantic edges."""
         rows = self.conn.execute(
-            "SELECT id, embedding FROM nodes WHERE id != ? AND status = 'active' AND embedding IS NOT NULL",
+            "SELECT id, embedding FROM nodes "
+            "WHERE id != ? AND status = 'active' AND embedding IS NOT NULL",
             (node_id,),
         ).fetchall()
 

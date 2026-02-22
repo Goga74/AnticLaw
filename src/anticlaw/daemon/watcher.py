@@ -44,7 +44,6 @@ class FileWatcher:
     def start(self) -> None:
         """Start watching the home directory."""
         try:
-            from watchdog.events import FileSystemEventHandler
             from watchdog.observers import Observer
         except ImportError as e:
             raise RuntimeError(

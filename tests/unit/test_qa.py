@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 from anticlaw.core.meta_db import MetaDB, SearchResult
 from anticlaw.core.models import Chat, ChatMessage
 from anticlaw.core.storage import ChatStorage
-from anticlaw.llm.ollama_client import OllamaClient, OllamaNotAvailable
+from anticlaw.llm.ollama_client import OllamaClient, OllamaNotAvailableError
 from anticlaw.llm.qa import QAResult, ask
 
 
@@ -85,7 +85,7 @@ class TestAsk:
         home = _setup_kb(tmp_path)
 
         client = MagicMock(spec=OllamaClient)
-        client.generate.side_effect = OllamaNotAvailable("not running")
+        client.generate.side_effect = OllamaNotAvailableError("not running")
 
         result = ask("auth", home, client=client)
 

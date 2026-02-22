@@ -3,7 +3,7 @@
 from unittest.mock import MagicMock, patch
 
 from anticlaw.core.models import Chat, ChatMessage
-from anticlaw.llm.ollama_client import OllamaClient, OllamaNotAvailable
+from anticlaw.llm.ollama_client import OllamaClient, OllamaNotAvailableError
 from anticlaw.llm.tagger import _parse_tags, auto_categorize, auto_tag
 
 
@@ -72,7 +72,7 @@ class TestAutoTag:
 
     def test_graceful_fallback_when_ollama_unavailable(self):
         client = MagicMock(spec=OllamaClient)
-        client.generate.side_effect = OllamaNotAvailable("not running")
+        client.generate.side_effect = OllamaNotAvailableError("not running")
 
         chat = _make_chat()
         tags = auto_tag(chat, client=client)
@@ -123,7 +123,7 @@ class TestAutoCategorize:
 
     def test_graceful_fallback_when_ollama_unavailable(self):
         client = MagicMock(spec=OllamaClient)
-        client.generate.side_effect = OllamaNotAvailable("not running")
+        client.generate.side_effect = OllamaNotAvailableError("not running")
 
         chat = _make_chat()
         result = auto_categorize(chat, client=client)

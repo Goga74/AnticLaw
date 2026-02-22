@@ -3,10 +3,9 @@
 from __future__ import annotations
 
 import logging
-from pathlib import Path
 
 from anticlaw.core.models import Chat
-from anticlaw.llm.ollama_client import OllamaClient, OllamaNotAvailable
+from anticlaw.llm.ollama_client import OllamaClient, OllamaNotAvailableError
 
 log = logging.getLogger(__name__)
 
@@ -73,7 +72,7 @@ def summarize_chat(
 
     try:
         return client.generate(prompt)
-    except OllamaNotAvailable:
+    except OllamaNotAvailableError:
         log.warning("Ollama not available — cannot summarize chat '%s'", chat.title)
         return ""
 
@@ -119,6 +118,6 @@ def summarize_project(
 
     try:
         return client.generate(prompt)
-    except OllamaNotAvailable:
+    except OllamaNotAvailableError:
         log.warning("Ollama not available — cannot summarize project '%s'", name)
         return ""
