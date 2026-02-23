@@ -32,10 +32,10 @@ Six provider families:
 │  │ Source       │  │ Input        │  │ Scraper       │           │
 │  │ Providers   │  │ Providers    │  │ Providers     │           │
 │  ├─────────────┤  ├──────────────┤  ├───────────────┤           │
-│  │ local-files │  │ cli          │  │ claude-scraper│           │
-│  │ obsidian    │  │ mcp          │  │ chatgpt-scr.  │           │
-│  │ notion      │  │ http-api     │  │ gemini-scr.   │           │
-│  │ (your own)  │  │ whisper      │  │ (your own)    │           │
+│  │ local-files │  │ cli          │  │ claude-web   │           │
+│  │ obsidian    │  │ mcp          │  │ chatgpt-web  │           │
+│  │ notion      │  │ http-api     │  │ gemini-web   │           │
+│  │ (your own)  │  │ whisper      │  │ perplexity   │           │
 │  └─────────────┘  └──────────────┘  └───────────────┘           │
 └──────────────────────────────────────────────────────────────────┘
 ```
@@ -654,6 +654,21 @@ class GeminiScraper:
     # Scrape Gems, extensions data
 ```
 
+### Provider: Perplexity Scraper
+
+```python
+class PerplexityScraper:
+    name = "perplexity-scraper"
+    info = ScraperInfo(
+        display_name="Perplexity Scraper",
+        login_url="https://www.perplexity.ai",
+        capabilities={"chat_mapping"},
+    )
+    # Scrape conversation threads and source citations
+    # Perplexity has no official export — scraper is the only option
+    # No API key needed — uses existing web session via Playwright
+```
+
 ### Security
 
 - Runs Playwright in **headed mode** — user sees exactly what happens
@@ -674,6 +689,8 @@ providers:
       enabled: false
     gemini:
       enabled: false
+    perplexity:
+      enabled: false
 ```
 
 ### CLI
@@ -683,6 +700,7 @@ aw scrape claude                    # launch browser, login, scrape project mapp
 aw scrape claude --knowledge        # also download Knowledge files
 aw scrape chatgpt                   # scrape ChatGPT structure
 aw scrape gemini                    # scrape Gemini structure
+aw scrape perplexity                # scrape Perplexity threads
 ```
 
 ---
@@ -803,7 +821,8 @@ src/anticlaw/providers/
     ├── base.py              # ScraperProvider Protocol + ScraperInfo
     ├── claude.py            # Claude.ai project/knowledge scraper
     ├── chatgpt.py           # ChatGPT structure scraper
-    └── gemini.py            # Gemini data scraper
+    ├── gemini.py            # Gemini data scraper
+    └── perplexity.py        # Perplexity thread scraper
 ```
 
 ---

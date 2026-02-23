@@ -294,10 +294,10 @@ Takeout/
 ```
 
 **Capabilities:**
-- `export_bulk` — parse Google Takeout ZIP (Phase 16)
-- `push` / `pull_api` — via Google AI API (Phase 17, free tier available)
+- `export_bulk` — parse Google Takeout ZIP (Phase 15)
+- `push` / `pull_api` — via Google AI API (Phase 14, free tier available: 15 RPM, 1M tokens/day)
 
-**Note:** Gemini Advanced subscribers ($20/mo) get some API access included, unlike Claude Pro and ChatGPT Plus which require separate API keys. See section 26 for details.
+**Note:** Gemini API has a generous free tier (15 requests/minute, 1M tokens/day for Gemini Flash), unlike Claude and ChatGPT which require paid API keys separate from web subscriptions. See section 26 for details.
 
 ### 5.5 Ollama Provider
 
@@ -645,8 +645,11 @@ aw mcp install cursor                 # Register with Cursor
 ### Provider Sync
 
 ```bash
+aw send <chat-id> [--provider claude] # Send chat to LLM API, get response
 aw sync claude                        # Sync with Claude.ai
 aw sync chatgpt                       # Sync with ChatGPT
+aw push <chat-id> --target claude     # Push single chat to cloud
+aw pull claude --since 7d             # Pull recent chats from cloud
 aw providers                          # List configured providers
 ```
 
@@ -737,7 +740,7 @@ anticlaw/
 │   │   ├── hooks.py             # ✅ TurnTracker, config generation, install functions
 │   │   └── __main__.py          # ✅ Entry point for python -m anticlaw.mcp
 │   ├── providers/
-│   │   ├── registry.py          # ✅ ProviderRegistry (unified for all 3 families)
+│   │   ├── registry.py          # ✅ ProviderRegistry (unified for all 6 families)
 │   │   ├── llm/
 │   │   │   ├── base.py          # ✅ LLMProvider Protocol + ProviderInfo + Capability
 │   │   │   ├── claude.py        # ✅ Parse conversations.json + scrubbing
@@ -749,10 +752,16 @@ anticlaw/
 │   │   │   ├── gdrive.py        # Google Drive API
 │   │   │   ├── s3.py            # boto3 (AWS/MinIO/B2/R2)
 │   │   │   └── rsync.py         # shells out to rsync
-│   │   └── embedding/
-│   │       ├── base.py          # ✅ EmbeddingProvider Protocol + EmbeddingInfo
-│   │       ├── ollama.py        # ✅ OllamaEmbeddingProvider (nomic-embed-text, 768-dim)
-│   │       └── local_model.py   # model2vec/fastembed (256-dim)
+│   │   ├── embedding/
+│   │   │   ├── base.py          # ✅ EmbeddingProvider Protocol + EmbeddingInfo
+│   │   │   ├── ollama.py        # ✅ OllamaEmbeddingProvider (nomic-embed-text, 768-dim)
+│   │   │   └── local_model.py   # model2vec/fastembed (256-dim)
+│   │   └── scraper/
+│   │       ├── base.py          # ScraperProvider Protocol + ScraperInfo
+│   │       ├── claude.py        # Claude.ai project/knowledge scraper
+│   │       ├── chatgpt.py       # ChatGPT structure scraper
+│   │       ├── gemini.py        # Gemini data scraper
+│   │       └── perplexity.py    # Perplexity thread scraper
 │   ├── llm/
 │   │   ├── __init__.py          # ✅ Package init
 │   │   ├── ollama_client.py     # ✅ OllamaClient: generate(), available_models(), is_available()
@@ -776,7 +785,7 @@ anticlaw/
 │       ├── llm_cmd.py           # ✅ aw summarize, aw autotag, aw ask
 │       ├── knowledge_cmd.py     # aw inbox, stale, duplicates ...
 │       ├── provider_cmd.py      # aw providers ...
-│       ├── sync_cmd.py          # aw sync, aw push, aw pull (Phase 17)
+│       ├── sync_cmd.py          # aw send, aw sync, aw push, aw pull (Phase 14)
 │       ├── daemon_cmd.py        # aw daemon ...
 │       └── mcp_cmd.py           # ✅ aw mcp start, install
 ├── tests/
@@ -842,7 +851,7 @@ providers:
   gemini:
     enabled: false
 
-# Sync (bidirectional LLM sync — Phase 17)
+# Sync (bidirectional LLM sync — Phase 14)
 sync:
   enabled: false
   default_push_target: claude            # fallback push target
@@ -1055,15 +1064,15 @@ When enabled:
 
 ### v1.1 — Planned
 
-- [ ] Local file source + HTTP API (`aw scan`, `aw api start`)
-- [ ] Web UI (`aw ui`)
-- [ ] Bidirectional LLM sync (`aw sync`, `aw push`, `aw pull`)
+- [ ] Phase 12: Local file source + HTTP API (`aw scan`, `aw api start`)
+- [ ] Phase 13: Web UI (`aw ui`)
+- [ ] Phase 14: Bidirectional LLM sync (`aw send`, `aw sync`, `aw push`, `aw pull`)
 
 ### v1.2 — Planned
 
-- [ ] Gemini Provider: parse Google Takeout export
-- [ ] Voice input via Whisper (`aw listen`)
-- [ ] Alexa integration
+- [ ] Phase 15: Gemini Provider — parse Google Takeout export (`aw import gemini`)
+- [ ] Phase 16: Voice input via Whisper (`aw listen`)
+- [ ] Phase 17: Alexa integration
 
 ---
 
@@ -1114,11 +1123,11 @@ Fourth provider family — content sources beyond LLM chat exports.
 │  │ Source       │  │ Input        │  │ Scraper       │  ← NEW   │
 │  │ Providers   │  │ Providers    │  │ Providers     │           │
 │  ├─────────────┤  ├──────────────┤  ├───────────────┤           │
-│  │ llm-export  │  │ cli          │  │ claude-scraper│           │
-│  │ local-files │  │ mcp          │  │ chatgpt-scr.  │           │
-│  │ obsidian    │  │ http-api     │  │ gemini-scr.   │           │
-│  │ notion      │  │ whisper      │  │ (your own)    │           │
-│  │ (your own)  │  │ alexa        │  │               │           │
+│  │ llm-export  │  │ cli          │  │ claude-web   │           │
+│  │ local-files │  │ mcp          │  │ chatgpt-web  │           │
+│  │ obsidian    │  │ http-api     │  │ gemini-web   │           │
+│  │ notion      │  │ whisper      │  │ perplexity   │           │
+│  │ (your own)  │  │ alexa        │  │ (your own)   │           │
 │  └─────────────┘  └──────────────┘  └───────────────┘           │
 └──────────────────────────────────────────────────────────────────┘
 ```
@@ -1437,7 +1446,7 @@ If the daemon was not running when a job was scheduled, it will run the job on s
 
 ---
 
-## 26. Bidirectional LLM Sync (v2.0+)
+## 26. Bidirectional LLM Sync (Phase 14)
 
 ### File-as-interface pattern
 
@@ -1445,7 +1454,7 @@ AnticLaw enables a powerful workflow where the file system acts as the interface
 
 1. User (or MCP tool) creates a `.md` file with `status: draft` in frontmatter
 2. The daemon detects the file, resolves the push target from config hierarchy
-3. Content is sent to the target LLM API (Claude/ChatGPT/Gemini)
+3. Content is sent to the target LLM API (Claude/ChatGPT/Gemini/Ollama)
 4. LLM response is appended to the same `.md` file
 5. File status changes to `status: complete`
 
@@ -1472,15 +1481,32 @@ The push target is resolved from the most specific to the most general:
 
 ### API key vs web subscription
 
-**Critical distinction** that users often confuse:
+> **⚠️ WARNING:** Web subscriptions (Claude Pro $20/mo, ChatGPT Plus $20/mo) do **NOT** provide API access.
+> Users MUST obtain separate API keys. This is the #1 source of confusion for new users.
 
-| Platform | Web subscription | API access |
-|----------|-----------------|------------|
-| Claude | Claude Pro/Team ($20/mo) — **NO** API access | Anthropic API key (separate, pay-per-token) |
-| ChatGPT | ChatGPT Plus ($20/mo) — **NO** API access | OpenAI API key (separate, pay-per-token) |
-| Gemini | Gemini Advanced ($20/mo) — includes some API | Google AI API key (free tier available) |
+| Platform | Web subscription | API access | Free tier |
+|----------|-----------------|------------|-----------|
+| Claude | Claude Pro/Team ($20/mo) — **NO** API access | Anthropic API key (separate, pay-per-token) | None |
+| ChatGPT | ChatGPT Plus ($20/mo) — **NO** API access | OpenAI API key (separate, pay-per-token) | None |
+| Gemini | Gemini Advanced ($20/mo) — includes some API | Google AI API key | **15 RPM, 1M tokens/day free** |
+| Ollama | N/A — free, runs locally | N/A — localhost:11434 | **Free (local inference)** |
 
-Push/pull features require **API keys**, not web subscriptions. The CLI validates this and shows clear guidance:
+### API cost table
+
+| Provider | Model | Input | Output | ~4K token chat |
+|----------|-------|-------|--------|---------------|
+| Anthropic | Claude Sonnet | $3 / 1M tok | $15 / 1M tok | ~$0.07 |
+| Anthropic | Claude Haiku | $0.25 / 1M tok | $1.25 / 1M tok | ~$0.006 |
+| OpenAI | GPT-4o | $2.50 / 1M tok | $10 / 1M tok | ~$0.05 |
+| OpenAI | GPT-4o mini | $0.15 / 1M tok | $0.60 / 1M tok | ~$0.003 |
+| Google | Gemini Flash | Free (15 RPM) | Free (15 RPM) | **$0.00** |
+| Google | Gemini Pro | $1.25 / 1M tok | $5 / 1M tok | ~$0.025 |
+| Ollama | Any local model | Free | Free | **$0.00** |
+
+> **Recommendation:** Start with Gemini Flash (free) or Ollama (free, local) for testing.
+> Use Claude Haiku or GPT-4o mini for cost-effective production use.
+
+Push/pull/send features require **API keys**, not web subscriptions. The CLI validates this and shows clear guidance:
 
 ```
 $ aw push chat-001 --target claude
@@ -1495,7 +1521,8 @@ Then run: aw auth claude
 
 | Mode | Command | Description |
 |------|---------|-------------|
-| Push single | `aw push <chat-id> --target claude` | Send one chat to cloud |
+| Send & receive | `aw send <chat-id> [--provider claude]` | Send chat to LLM API, append response to file |
+| Push single | `aw push <chat-id> --target claude` | Upload one chat to cloud (no response) |
 | Pull recent | `aw pull claude --since 7d` | Download new cloud chats |
 | Bidirectional | `aw sync claude --project X` | Full two-way sync |
 | Draft auto-push | Daemon watches for `status: draft` | Automatic on file creation |
@@ -1539,8 +1566,9 @@ LLM platforms provide limited export capabilities:
 | Claude | `conversations.json` ZIP | Project→chat mapping, Knowledge files, system prompts |
 | ChatGPT | `conversations.json` ZIP | Custom GPT configs, shared conversations |
 | Gemini | Google Takeout | Gems, extensions data |
+| Perplexity | None | All data — no official export available |
 
-Scrapers fill these gaps via Playwright browser automation as a one-time supplement to official exports.
+Scrapers fill these gaps via Playwright browser automation as a one-time supplement to official exports. No API key needed — scrapers use the user's existing browser session.
 
 ### ScraperProvider Protocol
 
@@ -1577,20 +1605,14 @@ class ScraperProvider(Protocol):
         ...
 ```
 
-### Provider: Claude Scraper
+### Implementations
 
-```python
-class ClaudeScraper:
-    name = "claude-scraper"
-    info = ScraperInfo(
-        display_name="Claude.ai Scraper",
-        login_url="https://claude.ai/login",
-        capabilities={"projects", "chat_mapping", "knowledge"},
-    )
-    # One-time: map chats to projects, download Knowledge files
-    # Requires: user logs in via browser, scraper reads sidebar
-    # No API key needed — uses existing web session
-```
+| Scraper | Login URL | Capabilities | Notes |
+|---------|-----------|-------------|-------|
+| `claude-web` | `https://claude.ai/login` | projects, chat_mapping, knowledge | Download Knowledge files, map chats→projects |
+| `chatgpt-web` | `https://chat.openai.com/auth/login` | projects, chat_mapping | Custom GPT configs, folder structure |
+| `gemini-web` | `https://gemini.google.com` | projects, chat_mapping | Gems, extensions data |
+| `perplexity-web` | `https://www.perplexity.ai` | chat_mapping | Thread scraping (no official export exists) |
 
 ### CLI
 
@@ -1598,6 +1620,8 @@ class ClaudeScraper:
 aw scrape claude                    # launch browser, login, scrape project mapping
 aw scrape claude --knowledge        # also download Knowledge files
 aw scrape chatgpt                   # scrape ChatGPT structure
+aw scrape gemini                    # scrape Gemini structure
+aw scrape perplexity                # scrape Perplexity threads
 ```
 
 ### Security considerations

@@ -64,7 +64,8 @@ src/anticlaw/
 │       ├── base.py          # ScraperProvider Protocol + ScraperInfo
 │       ├── claude.py        # Claude.ai project/knowledge scraper
 │       ├── chatgpt.py       # ChatGPT structure scraper
-│       └── gemini.py        # Gemini data scraper
+│       ├── gemini.py        # Gemini data scraper
+│       └── perplexity.py    # Perplexity thread scraper
 ├── llm/
 │   ├── __init__.py           # ✅ Package init
 │   ├── ollama_client.py      # ✅ OllamaClient: generate(), available_models(), is_available()
@@ -90,7 +91,7 @@ src/anticlaw/
     ├── llm_cmd.py             # ✅ aw summarize, aw autotag, aw ask
     ├── knowledge_cmd.py      # ✅ aw inbox, stale, duplicates, health, retention, stats
     ├── provider_cmd.py       # aw providers ...
-    ├── sync_cmd.py           # aw sync, aw push, aw pull (bidirectional sync)
+    ├── sync_cmd.py           # aw send, aw sync, aw push, aw pull (bidirectional sync)
     ├── daemon_cmd.py         # ✅ aw daemon start/stop/status/install/uninstall/logs
     ├── backup_cmd.py         # ✅ aw backup now/list/restore/verify/status
     ├── cron_cmd.py           # ✅ aw cron list/add/run/logs/remove
@@ -225,9 +226,9 @@ Read these files BEFORE implementing any phase. They contain exact data models, 
 Key upcoming features documented in PLAN.md and SPEC.md:
 - **Phase 12:** Local file source + HTTP API (`aw scan`, `aw api start`)
 - **Phase 13:** Web UI (`aw ui`)
-- **Phase 14:** Bidirectional LLM sync — push/pull chats via cloud APIs, file-as-interface pattern (`aw sync`, `aw push`, `aw pull`)
+- **Phase 14:** Bidirectional LLM sync — file-as-interface pattern, `aw send`, `aw sync`, `aw push`, `aw pull`
 - **Phase 15:** Gemini provider — Google Takeout import (`aw import gemini`)
 - **Phase 16:** Voice input via Whisper (`aw listen`)
 - **Phase 17:** Alexa integration
-- **Scraper providers:** Browser-based supplementary data collection (Playwright)
+- **Scraper providers:** Browser-based data collection (Playwright): claude-web, chatgpt-web, gemini-web, perplexity-web
 - **6 provider families:** LLM, Backup, Embedding, Source, Input, Scraper
