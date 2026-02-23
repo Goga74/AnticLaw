@@ -31,6 +31,7 @@ from anticlaw.cli.project_cmd import (
 )
 from anticlaw.cli.scan_cmd import scan_cmd
 from anticlaw.cli.search_cmd import search_cmd
+from anticlaw.cli.sync_cmd import chat_cmd, send_cmd
 
 
 @click.group()
@@ -68,6 +69,8 @@ cli.add_command(stats_cmd)
 cli.add_command(scan_cmd)
 cli.add_command(api_group)
 cli.add_command(ui_cmd)
+cli.add_command(send_cmd)
+cli.add_command(chat_cmd)
 
 
 if __name__ == "__main__":

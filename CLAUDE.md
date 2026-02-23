@@ -76,11 +76,15 @@ src/anticlaw/
 │   ├── tagger.py             # ✅ auto_tag, auto_categorize via Ollama
 │   └── qa.py                 # ✅ ask() — search KB + LLM answer with references
 ├── daemon/
-│   ├── watcher.py           # ✅ watchdog file monitor (debounce, reindex, graph)
+│   ├── watcher.py           # ✅ watchdog file monitor (debounce, reindex, graph, draft detection)
 │   ├── scheduler.py         # ✅ APScheduler cron jobs (7 built-in actions)
 │   ├── tray.py              # ✅ pystray system tray (menu, notifications)
 │   ├── ipc.py               # ✅ Unix socket / Named pipe (CLI ↔ daemon)
 │   └── service.py           # ✅ Platform service registration (systemd/launchd/Windows)
+├── sync/
+│   ├── __init__.py          # ✅ Package init (API key warnings)
+│   ├── providers.py         # ✅ SyncProvider Protocol + 4 adapters (Claude, OpenAI, Gemini, Ollama)
+│   └── engine.py            # ✅ SyncEngine (push target hierarchy, send_chat, find/process drafts)
 ├── ui/
 │   ├── __init__.py          # ✅ Package init
 │   ├── app.py               # ✅ mount_ui() — Jinja2 + HTMX routes (dashboard/search/projects/inbox)
@@ -98,7 +102,7 @@ src/anticlaw/
     ├── scan_cmd.py           # ✅ aw scan [path] [--watch]
     ├── api_cmd.py            # ✅ aw api start [--port] [--host]
     ├── provider_cmd.py       # aw providers ...
-    ├── sync_cmd.py           # aw send, aw sync, aw push, aw pull (bidirectional sync)
+    ├── sync_cmd.py           # ✅ aw send <chat-id>, aw chat <project> (bidirectional sync)
     ├── daemon_cmd.py         # ✅ aw daemon start/stop/status/install/uninstall/logs
     ├── backup_cmd.py         # ✅ aw backup now/list/restore/verify/status
     ├── cron_cmd.py           # ✅ aw cron list/add/run/logs/remove
@@ -162,6 +166,9 @@ aw cron list                     # List cron tasks
 aw cron run <task>               # Run a cron task now
 aw ui                            # Start Web UI (opens browser)
 aw ui --no-open                  # Start Web UI without opening browser
+aw send <chat-id>                # Send chat to LLM API, append response
+aw send <chat-id> -p ollama      # Send to specific provider
+aw chat <project> -p ollama      # Interactive file-based chat
 ```
 
 ## File Format: Chat (.md)
@@ -193,7 +200,7 @@ There are three main approaches...
 
 ## Current Phase
 
-Phase 13 complete. Next: Phase 14 (Bidirectional LLM sync).
+Phase 14 complete. Next: Phase 15 (Gemini provider).
 
 ### Completed
 - **Phase 0:** Scaffolding — pyproject.toml, directory structure, `aw --version` ✅
@@ -210,9 +217,10 @@ Phase 13 complete. Next: Phase 14 (Bidirectional LLM sync).
 - **Phase 11:** v1.0 release polish — version bump to 1.0.0, `aw init [path] [--interactive]` (guided setup, config.yaml generation, .gitignore), README.md with architecture diagram/feature list/quickstart/badges, docs/QUICKSTART.md (step-by-step guide), docs/TOOLS.md (MCP tool reference for Claude Code), PyPI metadata (classifiers, urls, license), pyproject.toml polished ✅
 - **Phase 12:** Local file source + HTTP API — SourceProvider Protocol + SourceInfo, LocalFilesProvider (recursive walk, SHA-256 change detection, 30+ extensions, PDF via pymupdf, exclude patterns), SourceDocument dataclass, MetaDB source_files table + FTS5, search_unified() (chats+files+insights), FastAPI HTTP API (health/search/ask/projects/stats, API key auth, localhost bypass, CORS), CLI: `aw scan [path] [--watch]`, `aw api start [--port] [--host]`, config: sources + api sections, deps: `api` + `source-pdf` extras ✅
 - **Phase 13:** Web UI — Jinja2 + HTMX + Tailwind CSS (CDN, no build tools), `mount_ui()` on FastAPI, 4 full-page routes (dashboard/search/projects/inbox), 2 HTMX partial routes (search results/project chats), stat cards, sidebar nav, search with project/type filters, `enable_ui` param on `create_app()`, CLI: `aw ui [--port] [--host] [--no-open]` (auto-opens browser), config: `ui` section, deps: `ui` extra (jinja2) ✅
+- **Phase 14:** Bidirectional LLM sync — SyncProvider Protocol + 4 adapters (ClaudeAPI, OpenAIAPI, GeminiAPI, OllamaLocal) with httpx, SyncEngine (3-level push target hierarchy: frontmatter → _project.yaml → config.yaml, send_chat with response writeback, find/process drafts), daemon draft detection (auto_push_drafts config), CLI: `aw send <chat-id> [--provider]`, `aw chat <project> [--provider]` (interactive file-based chat), API key warnings (cloud requires separate paid keys), keyring integration, deps: `sync` extra (httpx) ✅
 
 ### Test coverage
-707+ unit tests passing (models, fileutil, storage, config, registry, claude provider, chatgpt provider, import CLI (claude + chatgpt), cross-provider import, init CLI, meta_db, search, search CLI, project CLI, context store, hooks, MCP tools, MCP CLI, embedding provider, vector index, advanced search tiers, fallback behavior, entities, graph, graph CLI, ollama client, summarizer, tagger, Q&A, LLM CLI, backup base, backup local, backup gdrive, watcher, scheduler, IPC, service, daemon CLI, backup CLI, cron CLI, retention, antientropy, knowledge CLI, source models, local files provider, meta_db source files, search unified, scan CLI, API server, UI routes).
+764+ unit tests passing (models, fileutil, storage, config, registry, claude provider, chatgpt provider, import CLI (claude + chatgpt), cross-provider import, init CLI, meta_db, search, search CLI, project CLI, context store, hooks, MCP tools, MCP CLI, embedding provider, vector index, advanced search tiers, fallback behavior, entities, graph, graph CLI, ollama client, summarizer, tagger, Q&A, LLM CLI, backup base, backup local, backup gdrive, watcher, watcher draft detection, scheduler, IPC, service, daemon CLI, backup CLI, cron CLI, retention, antientropy, knowledge CLI, source models, local files provider, meta_db source files, search unified, scan CLI, API server, UI routes, sync providers, sync engine, sync CLI).
 
 ## Specs
 
@@ -232,10 +240,9 @@ Read these files BEFORE implementing any phase. They contain exact data models, 
 6. **Tests for every module.** Write tests alongside code, not after. Minimum: happy path + error case.
 7. **After completing a task**, update this file's "Current Phase" section if the phase changed.
 
-## Planned Features (post-Phase 13)
+## Planned Features (post-Phase 14)
 
 Key upcoming features documented in PLAN.md and SPEC.md:
-- **Phase 14:** Bidirectional LLM sync — file-as-interface pattern, `aw send`, `aw sync`, `aw push`, `aw pull`
 - **Phase 15:** Gemini provider — Google Takeout import (`aw import gemini`)
 - **Phase 16:** Voice input via Whisper (`aw listen`)
 - **Phase 17:** Alexa integration

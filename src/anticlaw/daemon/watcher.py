@@ -141,7 +141,7 @@ class FileWatcher:
             self._reindex_chat(path)
 
     def _reindex_chat(self, path: Path) -> None:
-        """Reindex a single chat file."""
+        """Reindex a single chat file. Triggers sync for draft files."""
         if not path.exists():
             return
 
@@ -166,8 +166,32 @@ class FileWatcher:
             # Update graph
             self._update_graph(chat)
 
+            # Check for draft status — trigger sync engine
+            if str(chat.status) == "draft":
+                self._process_draft(path)
+
         except Exception:
             log.warning("Failed to reindex: %s", path, exc_info=True)
+
+    def _process_draft(self, path: Path) -> None:
+        """Send a draft chat to its push target via the sync engine."""
+        try:
+            from anticlaw.core.config import load_config
+
+            config = load_config(self.home / ".acl" / "config.yaml")
+            sync_cfg = config.get("sync", {})
+
+            if not sync_cfg.get("auto_push_drafts", False):
+                log.debug("auto_push_drafts disabled, skipping draft: %s", path)
+                return
+
+            from anticlaw.sync.engine import SyncEngine
+
+            engine = SyncEngine(self.home)
+            engine.send_chat(path)
+            log.info("Draft sent and response written: %s", path.name)
+        except Exception:
+            log.warning("Failed to process draft: %s", path, exc_info=True)
 
     def _update_graph(self, chat) -> None:
         """Update graph edges for a reindexed chat."""

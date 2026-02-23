@@ -77,6 +77,22 @@ DEFAULTS: dict = {
         "open_browser": True,
         "theme": "auto",
     },
+    # Bidirectional LLM sync (Phase 14)
+    # WARNING: Cloud API access (Claude, ChatGPT) requires SEPARATE paid API keys.
+    # Web subscriptions (Claude Pro $20/mo, ChatGPT Plus $20/mo) do NOT provide API access.
+    # Gemini has a free tier: 15 RPM, 1M tokens/day.
+    # Ollama is free — runs locally, no API key needed.
+    "sync": {
+        "enabled": False,
+        "default_push_target": None,
+        "auto_push_drafts": False,
+        "providers": {
+            "claude": {"api_key": "keyring"},
+            "chatgpt": {"api_key": "keyring"},
+            "gemini": {"api_key": "keyring"},
+            "ollama": {},
+        },
+    },
     "daemon": {
         "enabled": False,
         "autostart": False,
