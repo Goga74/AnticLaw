@@ -173,3 +173,22 @@ class SyncResult:
     pushed: int = 0
     conflicts: int = 0
     errors: list[str] = field(default_factory=list)
+
+
+# --- Source Document Models ---
+
+
+@dataclass
+class SourceDocument:
+    """A local file indexed as a source document."""
+
+    id: str = field(default_factory=_uuid)
+    file_path: str = ""
+    filename: str = ""
+    extension: str = ""
+    language: str = ""
+    content: str = ""
+    size: int = 0
+    hash: str = ""
+    indexed_at: datetime = field(default_factory=_now)
+    project_id: str = ""

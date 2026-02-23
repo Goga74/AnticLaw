@@ -470,3 +470,74 @@ def search(
         date_from=date_from, date_to=date_to, max_results=max_results,
         exact=exact,
     )
+
+
+# ---------------------------------------------------------------------------
+# Unified search (chats + files + insights)
+# ---------------------------------------------------------------------------
+
+def search_unified(
+    db: MetaDB,
+    query: str,
+    *,
+    project: str | None = None,
+    tags: list[str] | None = None,
+    importance: str | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    max_results: int = 20,
+    exact: bool = False,
+    tier: str = "auto",
+    vectors_dir: Path | None = None,
+    embedder=None,
+    alpha: float = 0.6,
+    result_types: list[str] | None = None,
+) -> list[SearchResult]:
+    """Search across chats, source files, and insights.
+
+    Args:
+        result_types: Filter to specific types: ["chat", "file", "insight"].
+                      None means all types.
+    """
+    types = set(result_types) if result_types else {"chat", "file", "insight"}
+    all_results: list[SearchResult] = []
+
+    # Search chats
+    if "chat" in types:
+        chat_results = search(
+            db, query, project=project, tags=tags, importance=importance,
+            date_from=date_from, date_to=date_to, max_results=max_results,
+            exact=exact, tier=tier, vectors_dir=vectors_dir,
+            embedder=embedder, alpha=alpha,
+        )
+        for r in chat_results:
+            if not r.result_type or r.result_type == "chat":
+                r.result_type = "chat"
+            all_results.append(r)
+
+    # Search source files
+    if "file" in types:
+        file_results = db.search_source_files(
+            query, max_results=max_results, exact=exact,
+        )
+        all_results.extend(file_results)
+
+    # Search insights
+    if "insight" in types:
+        insights = db.list_insights(query=query, project=project, max_results=max_results)
+        for ins in insights:
+            content = ins.get("content", "")
+            snippet = content[:200] + ("..." if len(content) > 200 else "")
+            all_results.append(SearchResult(
+                chat_id=ins["id"],
+                title=content[:80],
+                project_id=ins.get("project_id", ""),
+                snippet=snippet,
+                score=0.5,
+                file_path="",
+                result_type="insight",
+            ))
+
+    # Sort by score descending, limit to max_results
+    all_results.sort(key=lambda r: abs(r.score), reverse=True)
+    return all_results[:max_results]

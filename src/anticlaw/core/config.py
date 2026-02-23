@@ -46,6 +46,30 @@ DEFAULTS: dict = {
         "auto_save_reminder_turns": [10, 20, 30],
         "pre_compact_block": True,
     },
+    "sources": {
+        "local-files": {
+            "enabled": False,
+            "paths": [],
+            "extensions": [
+                ".java", ".py", ".js", ".ts", ".go", ".rs", ".sql",
+                ".txt", ".md", ".json", ".xml", ".yaml", ".yml", ".toml",
+                ".csv", ".properties", ".ini", ".cfg", ".html", ".css",
+                ".sh", ".pdf",
+            ],
+            "exclude": [
+                "node_modules", ".git", "__pycache__", "target",
+                "build", "dist", ".idea", ".vscode",
+            ],
+            "max_file_size_mb": 10,
+        },
+    },
+    "api": {
+        "enabled": False,
+        "host": "127.0.0.1",
+        "port": 8420,
+        "api_key": None,
+        "cors_origins": [],
+    },
     "daemon": {
         "enabled": False,
         "autostart": False,

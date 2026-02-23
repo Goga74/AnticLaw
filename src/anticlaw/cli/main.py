@@ -3,6 +3,7 @@
 import click
 
 from anticlaw import __version__
+from anticlaw.cli.api_cmd import api_group
 from anticlaw.cli.backup_cmd import backup_group
 from anticlaw.cli.cron_cmd import cron_group
 from anticlaw.cli.daemon_cmd import daemon_group
@@ -28,6 +29,7 @@ from anticlaw.cli.project_cmd import (
     show_cmd,
     tag_cmd,
 )
+from anticlaw.cli.scan_cmd import scan_cmd
 from anticlaw.cli.search_cmd import search_cmd
 
 
@@ -63,6 +65,8 @@ cli.add_command(health_cmd)
 cli.add_command(retention_group)
 cli.add_command(restore_cmd)
 cli.add_command(stats_cmd)
+cli.add_command(scan_cmd)
+cli.add_command(api_group)
 
 
 if __name__ == "__main__":

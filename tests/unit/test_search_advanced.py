@@ -462,9 +462,13 @@ class TestFallback:
         db.close()
 
     def test_hybrid_without_vectors_falls_back(self, tmp_path, monkeypatch):
+        from anticlaw.core.search import _search_keyword
+
         monkeypatch.setattr("anticlaw.core.search._has_bm25s", lambda: True)
         monkeypatch.setattr("anticlaw.core.search._has_rapidfuzz", lambda: False)
         monkeypatch.setattr("anticlaw.core.search._has_chromadb", lambda: True)
+        # Mock _search_bm25 since the real bm25s may not be installed
+        monkeypatch.setattr("anticlaw.core.search._search_bm25", _search_keyword)
 
         db = _setup_db(tmp_path)
         # Hybrid requested but no vectors_dir → bm25 (best without vectors)

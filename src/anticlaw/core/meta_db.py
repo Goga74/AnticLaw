@@ -23,6 +23,7 @@ class SearchResult:
     snippet: str
     score: float
     file_path: str
+    result_type: str = "chat"  # "chat" | "file" | "insight"
 
 
 class MetaDB:
@@ -373,6 +374,90 @@ class MetaDB:
         ).fetchone()
         return row["cnt"] if row else 0
 
+    # --- Source Files ---
+
+    def index_source_file(self, doc) -> None:
+        """Insert or update a source file in the index."""
+        self.conn.execute(
+            """INSERT OR REPLACE INTO source_files
+               (id, file_path, filename, extension, language, size,
+                hash, indexed_at, project_id, content)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                doc.id, doc.file_path, doc.filename, doc.extension,
+                doc.language, doc.size, doc.hash,
+                _format_dt(doc.indexed_at), doc.project_id, doc.content,
+            ),
+        )
+        # Rebuild FTS entry
+        self.conn.execute(
+            "DELETE FROM source_files_fts WHERE file_id = ?", (doc.id,)
+        )
+        self.conn.execute(
+            "INSERT INTO source_files_fts(file_id, filename, content) VALUES (?, ?, ?)",
+            (doc.id, doc.filename, doc.content),
+        )
+        self.conn.commit()
+
+    def search_source_files(
+        self,
+        query: str,
+        *,
+        max_results: int = 20,
+        exact: bool = False,
+    ) -> list[SearchResult]:
+        """Search source files via FTS5 MATCH."""
+        fts_query = f'"{query}"' if exact else query
+
+        sql = """
+            SELECT f.file_id, s.filename, s.file_path, s.extension, s.language,
+                   snippet(source_files_fts, -1, '**', '**', '...', 64) as snippet,
+                   f.rank as score
+            FROM source_files_fts f
+            JOIN source_files s ON s.id = f.file_id
+            WHERE source_files_fts MATCH ?
+            ORDER BY f.rank
+            LIMIT ?
+        """
+        try:
+            rows = self.conn.execute(sql, [fts_query, max_results]).fetchall()
+        except sqlite3.OperationalError as e:
+            log.warning("Source files FTS5 query failed: %s", e)
+            return []
+
+        results = []
+        for row in rows:
+            results.append(SearchResult(
+                chat_id=row["file_id"],
+                title=row["filename"],
+                project_id="",
+                snippet=row["snippet"] or "",
+                score=row["score"] or 0.0,
+                file_path=row["file_path"] or "",
+                result_type="file",
+            ))
+        return results
+
+    def get_source_file(self, file_path: str) -> dict | None:
+        """Get a source file by path."""
+        row = self.conn.execute(
+            "SELECT * FROM source_files WHERE file_path = ?", (file_path,)
+        ).fetchone()
+        return dict(row) if row else None
+
+    def count_source_files(self) -> int:
+        """Count indexed source files."""
+        row = self.conn.execute(
+            "SELECT COUNT(*) as cnt FROM source_files"
+        ).fetchone()
+        return row["cnt"] if row else 0
+
+    def clear_source_files(self) -> None:
+        """Remove all source file entries."""
+        self.conn.execute("DELETE FROM source_files_fts")
+        self.conn.execute("DELETE FROM source_files")
+        self.conn.commit()
+
 
 # --- Schema ---
 
@@ -421,6 +506,23 @@ CREATE TABLE IF NOT EXISTS insights (
     created TEXT,
     updated TEXT,
     status TEXT
+);
+
+CREATE TABLE IF NOT EXISTS source_files (
+    id TEXT PRIMARY KEY,
+    file_path TEXT UNIQUE,
+    filename TEXT,
+    extension TEXT,
+    language TEXT,
+    size INTEGER,
+    hash TEXT,
+    indexed_at TEXT,
+    project_id TEXT,
+    content TEXT
+);
+
+CREATE VIRTUAL TABLE IF NOT EXISTS source_files_fts USING fts5(
+    file_id UNINDEXED, filename, content
 );
 """
 

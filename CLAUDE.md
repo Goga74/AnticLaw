@@ -60,6 +60,9 @@ src/anticlaw/
 │   │   ├── base.py          # ✅ EmbeddingProvider Protocol + EmbeddingInfo
 │   │   ├── ollama.py        # ✅ OllamaEmbeddingProvider (nomic-embed-text, 768-dim)
 │   │   └── local_model.py   # model2vec/fastembed (256-dim)
+│   ├── source/
+│   │   ├── base.py          # ✅ SourceProvider Protocol + SourceInfo
+│   │   └── local_files.py   # ✅ LocalFilesProvider (recursive walk, SHA-256, PDF)
 │   └── scraper/
 │       ├── base.py          # ScraperProvider Protocol + ScraperInfo
 │       ├── claude.py        # Claude.ai project/knowledge scraper
@@ -90,6 +93,8 @@ src/anticlaw/
     ├── graph_cmd.py           # ✅ aw related, aw why, aw timeline
     ├── llm_cmd.py             # ✅ aw summarize, aw autotag, aw ask
     ├── knowledge_cmd.py      # ✅ aw inbox, stale, duplicates, health, retention, stats
+    ├── scan_cmd.py           # ✅ aw scan [path] [--watch]
+    ├── api_cmd.py            # ✅ aw api start [--port] [--host]
     ├── provider_cmd.py       # aw providers ...
     ├── sync_cmd.py           # aw send, aw sync, aw push, aw pull (bidirectional sync)
     ├── daemon_cmd.py         # ✅ aw daemon start/stop/status/install/uninstall/logs
@@ -184,7 +189,7 @@ There are three main approaches...
 
 ## Current Phase
 
-Phase 11 (v1.0) complete. Next: Phase 12 (Local files + HTTP API).
+Phase 12 complete. Next: Phase 13 (Web UI).
 
 ### Completed
 - **Phase 0:** Scaffolding — pyproject.toml, directory structure, `aw --version` ✅
@@ -199,9 +204,10 @@ Phase 11 (v1.0) complete. Next: Phase 12 (Local files + HTTP API).
 - **Phase 9:** Retention + antientropy — 3-zone retention lifecycle (preview/run/restore, importance decay with half-life), antientropy features (inbox_suggestions via tag matching, find_stale, find_duplicates via semantic similarity, health_check with 4 checks), CLI: `aw inbox [--auto]`, `aw stale [--days]`, `aw duplicates`, `aw health`, `aw retention preview/run`, `aw restore`, `aw stats` ✅
 - **Phase 10:** ChatGPT provider — ChatGPTProvider (parse ChatGPT export ZIP with mapping-tree message structure, Unix timestamps, role normalization user→human, model extraction from metadata, multipart/code content, system/tool message filtering), reuses scrub_text from Claude provider, CLI: `aw import chatgpt <zip> [--scrub]`, cross-provider search (results from both Claude and ChatGPT) ✅
 - **Phase 11:** v1.0 release polish — version bump to 1.0.0, `aw init [path] [--interactive]` (guided setup, config.yaml generation, .gitignore), README.md with architecture diagram/feature list/quickstart/badges, docs/QUICKSTART.md (step-by-step guide), docs/TOOLS.md (MCP tool reference for Claude Code), PyPI metadata (classifiers, urls, license), pyproject.toml polished ✅
+- **Phase 12:** Local file source + HTTP API — SourceProvider Protocol + SourceInfo, LocalFilesProvider (recursive walk, SHA-256 change detection, 30+ extensions, PDF via pymupdf, exclude patterns), SourceDocument dataclass, MetaDB source_files table + FTS5, search_unified() (chats+files+insights), FastAPI HTTP API (health/search/ask/projects/stats, API key auth, localhost bypass, CORS), CLI: `aw scan [path] [--watch]`, `aw api start [--port] [--host]`, config: sources + api sections, deps: `api` + `source-pdf` extras ✅
 
 ### Test coverage
-640+ unit tests passing (models, fileutil, storage, config, registry, claude provider, chatgpt provider, import CLI (claude + chatgpt), cross-provider import, init CLI, meta_db, search, search CLI, project CLI, context store, hooks, MCP tools, MCP CLI, embedding provider, vector index, advanced search tiers, fallback behavior, entities, graph, graph CLI, ollama client, summarizer, tagger, Q&A, LLM CLI, backup base, backup local, backup gdrive, watcher, scheduler, IPC, service, daemon CLI, backup CLI, cron CLI, retention, antientropy, knowledge CLI).
+674+ unit tests passing (models, fileutil, storage, config, registry, claude provider, chatgpt provider, import CLI (claude + chatgpt), cross-provider import, init CLI, meta_db, search, search CLI, project CLI, context store, hooks, MCP tools, MCP CLI, embedding provider, vector index, advanced search tiers, fallback behavior, entities, graph, graph CLI, ollama client, summarizer, tagger, Q&A, LLM CLI, backup base, backup local, backup gdrive, watcher, scheduler, IPC, service, daemon CLI, backup CLI, cron CLI, retention, antientropy, knowledge CLI, source models, local files provider, meta_db source files, search unified, scan CLI, API server).
 
 ## Specs
 
@@ -221,10 +227,9 @@ Read these files BEFORE implementing any phase. They contain exact data models, 
 6. **Tests for every module.** Write tests alongside code, not after. Minimum: happy path + error case.
 7. **After completing a task**, update this file's "Current Phase" section if the phase changed.
 
-## Planned Features (post-Phase 11)
+## Planned Features (post-Phase 12)
 
 Key upcoming features documented in PLAN.md and SPEC.md:
-- **Phase 12:** Local file source + HTTP API (`aw scan`, `aw api start`)
 - **Phase 13:** Web UI (`aw ui`)
 - **Phase 14:** Bidirectional LLM sync — file-as-interface pattern, `aw send`, `aw sync`, `aw push`, `aw pull`
 - **Phase 15:** Gemini provider — Google Takeout import (`aw import gemini`)
@@ -232,3 +237,8 @@ Key upcoming features documented in PLAN.md and SPEC.md:
 - **Phase 17:** Alexa integration
 - **Scraper providers:** Browser-based data collection (Playwright): claude-web, chatgpt-web, gemini-web, perplexity-web
 - **6 provider families:** LLM, Backup, Embedding, Source, Input, Scraper
+
+## Environment Rules
+
+- If a required tool (Python, Ollama, Git) is not available, STOP immediately and give the user exact install instructions for their OS. Do NOT search the filesystem or attempt workarounds.
+- Always check `python --version` and `pip --version` before running tests or installs.
