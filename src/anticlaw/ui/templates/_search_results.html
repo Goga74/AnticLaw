@@ -1,0 +1,35 @@
+{% if results %}
+<p class="text-sm text-gray-500 mb-3">{{ results|length }} result{{ 's' if results|length != 1 else '' }} found</p>
+<div class="space-y-3">
+    {% for r in results %}
+    <div class="bg-white rounded-lg shadow p-4">
+        <div class="flex items-start justify-between">
+            <div class="flex-1">
+                <div class="flex items-center gap-2">
+                    <span class="text-xs font-medium px-2 py-0.5 rounded-full
+                        {% if r.type == 'chat' %}bg-blue-100 text-blue-700
+                        {% elif r.type == 'file' %}bg-green-100 text-green-700
+                        {% else %}bg-purple-100 text-purple-700{% endif %}">
+                        {{ r.type }}
+                    </span>
+                    <h3 class="font-medium text-gray-900">{{ r.title or r.id }}</h3>
+                </div>
+                {% if r.project %}
+                <p class="text-xs text-gray-500 mt-1">{{ r.project }}</p>
+                {% endif %}
+                {% if r.snippet %}
+                <p class="text-sm text-gray-600 mt-2">{{ r.snippet[:200] }}{% if r.snippet|length > 200 %}...{% endif %}</p>
+                {% endif %}
+            </div>
+            {% if r.score %}
+            <span class="text-xs text-gray-400 ml-2">{{ "%.2f"|format(r.score) }}</span>
+            {% endif %}
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% else %}
+<div class="text-center py-12 text-gray-400">
+    <p>No results found.</p>
+</div>
+{% endif %}

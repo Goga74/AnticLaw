@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}Search — AnticLaw{% endblock %}
+{% block content %}
+<h2 class="text-2xl font-bold mb-6">Search</h2>
+
+<form hx-get="/ui/search/results"
+      hx-target="#results"
+      hx-push-url="/ui/search"
+      hx-trigger="submit"
+      hx-indicator="#search-spinner"
+      class="bg-white rounded-lg shadow p-5 mb-6">
+    <div class="flex gap-2 mb-3">
+        <input type="text" name="q" value="{{ query }}" placeholder="Search knowledge base..."
+               class="flex-1 border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+        <button type="submit"
+                class="bg-blue-600 text-white px-4 py-2 rounded-md text-sm hover:bg-blue-700">
+            Search
+        </button>
+    </div>
+    <div class="flex gap-4 text-sm">
+        <label class="flex items-center gap-1">
+            <span class="text-gray-600">Project:</span>
+            <select name="project" class="border border-gray-300 rounded px-2 py-1">
+                <option value="">All</option>
+                {% for p in projects %}
+                <option value="{{ p.id }}" {% if selected_project == p.id %}selected{% endif %}>{{ p.name or p.id }}</option>
+                {% endfor %}
+            </select>
+        </label>
+        <label class="flex items-center gap-1">
+            <span class="text-gray-600">Type:</span>
+            <select name="type" class="border border-gray-300 rounded px-2 py-1">
+                <option value="">All</option>
+                <option value="chat" {% if selected_type == 'chat' %}selected{% endif %}>Chats</option>
+                <option value="file" {% if selected_type == 'file' %}selected{% endif %}>Files</option>
+                <option value="insight" {% if selected_type == 'insight' %}selected{% endif %}>Insights</option>
+            </select>
+        </label>
+        <span id="search-spinner" class="htmx-indicator text-gray-400">Searching...</span>
+    </div>
+</form>
+
+<div id="results">
+    {% if query %}
+    {% include "_search_results.html" %}
+    {% endif %}
+</div>
+{% endblock %}

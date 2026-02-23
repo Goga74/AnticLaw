@@ -42,10 +42,11 @@ daemon = ["watchdog>=3.0", "apscheduler>=3.10", "pystray>=0.19", "pillow>=10.0",
 backup = ["google-api-python-client>=2.0", "boto3>=1.28"]
 scraper = ["playwright>=1.40"]
 api = ["fastapi>=0.104", "uvicorn>=0.24"]
+ui = ["fastapi>=0.104", "uvicorn>=0.24", "jinja2>=3.1"]
 source-pdf = ["pymupdf>=1.23"]
 dev = ["pytest>=7.0", "pytest-cov>=4.0", "ruff>=0.4"]
 all = [
-    "anticlaw[search,fuzzy,semantic,llm,daemon,backup,scraper,api]",
+    "anticlaw[search,fuzzy,semantic,llm,daemon,backup,scraper,api,ui]",
 ]
 
 [project.scripts]

@@ -70,6 +70,13 @@ DEFAULTS: dict = {
         "api_key": None,
         "cors_origins": [],
     },
+    "ui": {
+        "enabled": True,
+        "host": "127.0.0.1",
+        "port": 8420,
+        "open_browser": True,
+        "theme": "auto",
+    },
     "daemon": {
         "enabled": False,
         "autostart": False,

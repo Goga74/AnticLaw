@@ -1,0 +1,40 @@
+{% if chats %}
+<div class="space-y-3">
+    {% for chat in chats %}
+    <div class="bg-white rounded-lg shadow p-4">
+        <div class="flex items-start justify-between">
+            <div>
+                <h3 class="font-medium text-gray-900">{{ chat.title or chat.id }}</h3>
+                <p class="text-xs text-gray-500 mt-1">
+                    {{ chat.provider }}
+                    {% if chat.created %} &middot; {{ chat.created }}{% endif %}
+                    {% if chat.message_count %} &middot; {{ chat.message_count }} messages{% endif %}
+                </p>
+            </div>
+            {% if chat.importance %}
+            <span class="text-xs px-2 py-0.5 rounded-full
+                {% if chat.importance == 'high' %}bg-red-100 text-red-700
+                {% elif chat.importance == 'medium' %}bg-yellow-100 text-yellow-700
+                {% else %}bg-gray-100 text-gray-600{% endif %}">
+                {{ chat.importance }}
+            </span>
+            {% endif %}
+        </div>
+        {% if chat.summary %}
+        <p class="text-sm text-gray-600 mt-2">{{ chat.summary }}</p>
+        {% endif %}
+        {% if chat.tags %}
+        <div class="flex gap-1 mt-2">
+            {% for tag in chat.tags %}
+            <span class="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded">{{ tag }}</span>
+            {% endfor %}
+        </div>
+        {% endif %}
+    </div>
+    {% endfor %}
+</div>
+{% else %}
+<div class="text-center py-12 text-gray-400">
+    <p>{% if selected_project %}No chats in this project.{% else %}Select a project to view chats.{% endif %}</p>
+</div>
+{% endif %}

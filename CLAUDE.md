@@ -82,8 +82,10 @@ src/anticlaw/
 │   ├── ipc.py               # ✅ Unix socket / Named pipe (CLI ↔ daemon)
 │   └── service.py           # ✅ Platform service registration (systemd/launchd/Windows)
 ├── ui/
-│   ├── app.py               # FastAPI mount for SPA + API routes
-│   └── static/              # Pre-built SPA bundle
+│   ├── __init__.py          # ✅ Package init
+│   ├── app.py               # ✅ mount_ui() — Jinja2 + HTMX routes (dashboard/search/projects/inbox)
+│   ├── templates/           # ✅ 8 templates (base, dashboard, search, projects, inbox, partials)
+│   └── static/              # ✅ Static files directory (CSS/JS overrides)
 └── cli/
     ├── main.py              # ✅ Click entry point + version
     ├── init_cmd.py           # ✅ aw init [path] [--interactive], config.yaml, .gitignore
@@ -158,6 +160,8 @@ aw backup now                    # Run backup now
 aw backup list                   # List backup snapshots
 aw cron list                     # List cron tasks
 aw cron run <task>               # Run a cron task now
+aw ui                            # Start Web UI (opens browser)
+aw ui --no-open                  # Start Web UI without opening browser
 ```
 
 ## File Format: Chat (.md)
@@ -189,7 +193,7 @@ There are three main approaches...
 
 ## Current Phase
 
-Phase 12 complete. Next: Phase 13 (Web UI).
+Phase 13 complete. Next: Phase 14 (Bidirectional LLM sync).
 
 ### Completed
 - **Phase 0:** Scaffolding — pyproject.toml, directory structure, `aw --version` ✅
@@ -205,9 +209,10 @@ Phase 12 complete. Next: Phase 13 (Web UI).
 - **Phase 10:** ChatGPT provider — ChatGPTProvider (parse ChatGPT export ZIP with mapping-tree message structure, Unix timestamps, role normalization user→human, model extraction from metadata, multipart/code content, system/tool message filtering), reuses scrub_text from Claude provider, CLI: `aw import chatgpt <zip> [--scrub]`, cross-provider search (results from both Claude and ChatGPT) ✅
 - **Phase 11:** v1.0 release polish — version bump to 1.0.0, `aw init [path] [--interactive]` (guided setup, config.yaml generation, .gitignore), README.md with architecture diagram/feature list/quickstart/badges, docs/QUICKSTART.md (step-by-step guide), docs/TOOLS.md (MCP tool reference for Claude Code), PyPI metadata (classifiers, urls, license), pyproject.toml polished ✅
 - **Phase 12:** Local file source + HTTP API — SourceProvider Protocol + SourceInfo, LocalFilesProvider (recursive walk, SHA-256 change detection, 30+ extensions, PDF via pymupdf, exclude patterns), SourceDocument dataclass, MetaDB source_files table + FTS5, search_unified() (chats+files+insights), FastAPI HTTP API (health/search/ask/projects/stats, API key auth, localhost bypass, CORS), CLI: `aw scan [path] [--watch]`, `aw api start [--port] [--host]`, config: sources + api sections, deps: `api` + `source-pdf` extras ✅
+- **Phase 13:** Web UI — Jinja2 + HTMX + Tailwind CSS (CDN, no build tools), `mount_ui()` on FastAPI, 4 full-page routes (dashboard/search/projects/inbox), 2 HTMX partial routes (search results/project chats), stat cards, sidebar nav, search with project/type filters, `enable_ui` param on `create_app()`, CLI: `aw ui [--port] [--host] [--no-open]` (auto-opens browser), config: `ui` section, deps: `ui` extra (jinja2) ✅
 
 ### Test coverage
-674+ unit tests passing (models, fileutil, storage, config, registry, claude provider, chatgpt provider, import CLI (claude + chatgpt), cross-provider import, init CLI, meta_db, search, search CLI, project CLI, context store, hooks, MCP tools, MCP CLI, embedding provider, vector index, advanced search tiers, fallback behavior, entities, graph, graph CLI, ollama client, summarizer, tagger, Q&A, LLM CLI, backup base, backup local, backup gdrive, watcher, scheduler, IPC, service, daemon CLI, backup CLI, cron CLI, retention, antientropy, knowledge CLI, source models, local files provider, meta_db source files, search unified, scan CLI, API server).
+707+ unit tests passing (models, fileutil, storage, config, registry, claude provider, chatgpt provider, import CLI (claude + chatgpt), cross-provider import, init CLI, meta_db, search, search CLI, project CLI, context store, hooks, MCP tools, MCP CLI, embedding provider, vector index, advanced search tiers, fallback behavior, entities, graph, graph CLI, ollama client, summarizer, tagger, Q&A, LLM CLI, backup base, backup local, backup gdrive, watcher, scheduler, IPC, service, daemon CLI, backup CLI, cron CLI, retention, antientropy, knowledge CLI, source models, local files provider, meta_db source files, search unified, scan CLI, API server, UI routes).
 
 ## Specs
 
@@ -227,10 +232,9 @@ Read these files BEFORE implementing any phase. They contain exact data models, 
 6. **Tests for every module.** Write tests alongside code, not after. Minimum: happy path + error case.
 7. **After completing a task**, update this file's "Current Phase" section if the phase changed.
 
-## Planned Features (post-Phase 12)
+## Planned Features (post-Phase 13)
 
 Key upcoming features documented in PLAN.md and SPEC.md:
-- **Phase 13:** Web UI (`aw ui`)
 - **Phase 14:** Bidirectional LLM sync — file-as-interface pattern, `aw send`, `aw sync`, `aw push`, `aw pull`
 - **Phase 15:** Gemini provider — Google Takeout import (`aw import gemini`)
 - **Phase 16:** Voice input via Whisper (`aw listen`)

@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}Projects — AnticLaw{% endblock %}
+{% block content %}
+<h2 class="text-2xl font-bold mb-6">Projects</h2>
+
+<div class="flex gap-6">
+    <!-- Project sidebar -->
+    <div class="w-64 flex-shrink-0">
+        <div class="bg-white rounded-lg shadow">
+            <div class="px-4 py-3 border-b border-gray-200">
+                <h3 class="text-sm font-semibold text-gray-600 uppercase">Projects</h3>
+            </div>
+            <ul class="divide-y divide-gray-100">
+                {% for p in projects %}
+                <li>
+                    <a href="/ui/projects?project={{ p.id }}"
+                       hx-get="/ui/projects/chats?project={{ p.id }}"
+                       hx-target="#chat-list"
+                       hx-push-url="/ui/projects?project={{ p.id }}"
+                       class="block px-4 py-3 text-sm hover:bg-gray-50 {% if selected_project == p.id %}bg-blue-50 text-blue-700 font-medium{% endif %}">
+                        {{ p.name or p.id }}
+                    </a>
+                </li>
+                {% endfor %}
+                {% if not projects %}
+                <li class="px-4 py-3 text-sm text-gray-400">No projects yet</li>
+                {% endif %}
+            </ul>
+        </div>
+    </div>
+
+    <!-- Chat list panel -->
+    <div class="flex-1">
+        <div id="chat-list">
+            {% include "_chat_list.html" %}
+        </div>
+    </div>
+</div>
+{% endblock %}

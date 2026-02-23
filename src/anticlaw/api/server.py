@@ -25,6 +25,7 @@ def create_app(
     home: Path | None = None,
     api_key: str | None = None,
     cors_origins: list[str] | None = None,
+    enable_ui: bool = False,
 ):
     """Create and configure the FastAPI application.
 
@@ -32,6 +33,7 @@ def create_app(
         home: Override ACL_HOME path.
         api_key: Optional API key for remote access. None = no auth needed.
         cors_origins: List of allowed CORS origins.
+        enable_ui: Mount the Web UI at /ui/*.
     """
     try:
         from fastapi import FastAPI, HTTPException, Query, Request
@@ -202,6 +204,19 @@ def create_app(
             }
         finally:
             db.close()
+
+    # Mount Web UI if enabled
+    if enable_ui:
+        try:
+            from anticlaw.ui.app import mount_ui
+
+            mount_ui(app, home_path)
+            log.info("Web UI mounted at /ui")
+        except ImportError:
+            log.warning(
+                "Web UI dependencies not installed. "
+                "Install with: pip install anticlaw[ui]"
+            )
 
     @app.exception_handler(Exception)
     async def global_exception_handler(request: Request, exc: Exception):
