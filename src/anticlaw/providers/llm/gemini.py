@@ -158,9 +158,9 @@ def _find_conversation_files(zip_path: Path) -> list[str]:
         # Gemini/Conversations/*/conversation.json
         # */conversation.json (fallback)
         lower = name.lower()
-        if lower.endswith("/conversation.json") or lower.endswith("\\conversation.json"):
-            if "gemini" in lower:
-                results.append(name)
+        is_conv = lower.endswith("/conversation.json") or lower.endswith("\\conversation.json")
+        if is_conv and "gemini" in lower:
+            results.append(name)
 
     # If no gemini-specific paths, try any conversation.json in subfolders
     if not results:
