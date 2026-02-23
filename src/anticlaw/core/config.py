@@ -93,6 +93,17 @@ DEFAULTS: dict = {
             "ollama": {},
         },
     },
+    # Voice input via Whisper (Phase 16)
+    "voice": {
+        "model": "base",
+        "language": "auto",
+        "push_to_talk": False,
+        "sample_rate": 16000,
+        "silence_threshold": 0.01,
+        "silence_duration": 1.5,
+        "max_duration": 30.0,
+        "model_path": None,
+    },
     "daemon": {
         "enabled": False,
         "autostart": False,

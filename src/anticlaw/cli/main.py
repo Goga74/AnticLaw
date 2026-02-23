@@ -19,6 +19,7 @@ from anticlaw.cli.knowledge_cmd import (
     stale_cmd,
     stats_cmd,
 )
+from anticlaw.cli.listen_cmd import listen_cmd
 from anticlaw.cli.llm_cmd import ask_cmd, autotag_cmd, summarize_cmd
 from anticlaw.cli.mcp_cmd import mcp_group
 from anticlaw.cli.project_cmd import (
@@ -71,6 +72,7 @@ cli.add_command(api_group)
 cli.add_command(ui_cmd)
 cli.add_command(send_cmd)
 cli.add_command(chat_cmd)
+cli.add_command(listen_cmd)
 
 
 if __name__ == "__main__":
