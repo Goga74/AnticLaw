@@ -208,8 +208,9 @@ class TestApiKeyAuth:
         app = create_app(home=home, api_key="secret123")
         client = TestClient(app)
 
-        # TestClient uses localhost by default
-        resp = client.get("/api/health")
+        # TestClient sends host='testclient', so mock _is_localhost
+        with patch("anticlaw.api.server._is_localhost", return_value=True):
+            resp = client.get("/api/health")
         assert resp.status_code == 200
 
     def test_auth_required_remote(self, tmp_path: Path):

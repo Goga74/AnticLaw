@@ -1,7 +1,5 @@
 """FastAPI HTTP API server for AnticLaw."""
 
-from __future__ import annotations
-
 import ipaddress
 import logging
 from pathlib import Path
