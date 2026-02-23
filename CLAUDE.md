@@ -48,7 +48,7 @@ src/anticlaw/
 │   │   ├── base.py          # ✅ LLMProvider Protocol + ProviderInfo + Capability enum
 │   │   ├── claude.py        # ✅ Parse conversations.json from export ZIP + scrubbing
 │   │   ├── chatgpt.py       # ✅ Parse ChatGPT export ZIP (mapping-tree messages, Unix timestamps)
-│   │   ├── gemini.py        # Parse Google Takeout Gemini export
+│   │   ├── gemini.py        # ✅ Parse Google Takeout Gemini export (per-folder JSON, multi-format)
 │   │   └── ollama.py        # Local LLM Q&A
 │   ├── backup/
 │   │   ├── base.py          # ✅ BackupProvider Protocol + BackupResult + BackupInfo
@@ -149,6 +149,7 @@ aw init                          # Initialize knowledge base
 aw init --interactive            # Guided setup
 aw import claude export.zip      # Import Claude export
 aw import chatgpt export.zip    # Import ChatGPT export
+aw import gemini takeout.zip    # Import Google Takeout Gemini export
 aw search "query"                # Search knowledge base
 aw list                          # List projects
 aw summarize <chat-or-project>   # Generate/update summary via Ollama
@@ -200,7 +201,7 @@ There are three main approaches...
 
 ## Current Phase
 
-Phase 14 complete. Next: Phase 15 (Gemini provider).
+Phase 15 complete. Next: Phase 16 (Voice input via Whisper).
 
 ### Completed
 - **Phase 0:** Scaffolding — pyproject.toml, directory structure, `aw --version` ✅
@@ -218,9 +219,10 @@ Phase 14 complete. Next: Phase 15 (Gemini provider).
 - **Phase 12:** Local file source + HTTP API — SourceProvider Protocol + SourceInfo, LocalFilesProvider (recursive walk, SHA-256 change detection, 30+ extensions, PDF via pymupdf, exclude patterns), SourceDocument dataclass, MetaDB source_files table + FTS5, search_unified() (chats+files+insights), FastAPI HTTP API (health/search/ask/projects/stats, API key auth, localhost bypass, CORS), CLI: `aw scan [path] [--watch]`, `aw api start [--port] [--host]`, config: sources + api sections, deps: `api` + `source-pdf` extras ✅
 - **Phase 13:** Web UI — Jinja2 + HTMX + Tailwind CSS (CDN, no build tools), `mount_ui()` on FastAPI, 4 full-page routes (dashboard/search/projects/inbox), 2 HTMX partial routes (search results/project chats), stat cards, sidebar nav, search with project/type filters, `enable_ui` param on `create_app()`, CLI: `aw ui [--port] [--host] [--no-open]` (auto-opens browser), config: `ui` section, deps: `ui` extra (jinja2) ✅
 - **Phase 14:** Bidirectional LLM sync — SyncProvider Protocol + 4 adapters (ClaudeAPI, OpenAIAPI, GeminiAPI, OllamaLocal) with httpx, SyncEngine (3-level push target hierarchy: frontmatter → _project.yaml → config.yaml, send_chat with response writeback, find/process drafts), daemon draft detection (auto_push_drafts config), CLI: `aw send <chat-id> [--provider]`, `aw chat <project> [--provider]` (interactive file-based chat), API key warnings (cloud requires separate paid keys), keyring integration, deps: `sync` extra (httpx) ✅
+- **Phase 15:** Gemini provider — GeminiProvider (parse Google Takeout ZIP or extracted directory, per-conversation-folder structure with conversation.json, multi-format support: text/content/parts/chunkedPrompt, ISO+Unix timestamps, user/model→human/assistant role normalization, title from JSON or folder name, model extraction from conversation or message metadata), reuses scrub_text from Claude provider, CLI: `aw import gemini <takeout.zip-or-dir> [--scrub] [--home PATH]`, cross-provider search (results from Claude + ChatGPT + Gemini) ✅
 
 ### Test coverage
-764+ unit tests passing (models, fileutil, storage, config, registry, claude provider, chatgpt provider, import CLI (claude + chatgpt), cross-provider import, init CLI, meta_db, search, search CLI, project CLI, context store, hooks, MCP tools, MCP CLI, embedding provider, vector index, advanced search tiers, fallback behavior, entities, graph, graph CLI, ollama client, summarizer, tagger, Q&A, LLM CLI, backup base, backup local, backup gdrive, watcher, watcher draft detection, scheduler, IPC, service, daemon CLI, backup CLI, cron CLI, retention, antientropy, knowledge CLI, source models, local files provider, meta_db source files, search unified, scan CLI, API server, UI routes, sync providers, sync engine, sync CLI).
+807+ unit tests passing (models, fileutil, storage, config, registry, claude provider, chatgpt provider, gemini provider, import CLI (claude + chatgpt + gemini), cross-provider import (3-provider), init CLI, meta_db, search, search CLI, project CLI, context store, hooks, MCP tools, MCP CLI, embedding provider, vector index, advanced search tiers, fallback behavior, entities, graph, graph CLI, ollama client, summarizer, tagger, Q&A, LLM CLI, backup base, backup local, backup gdrive, watcher, watcher draft detection, scheduler, IPC, service, daemon CLI, backup CLI, cron CLI, retention, antientropy, knowledge CLI, source models, local files provider, meta_db source files, search unified, scan CLI, API server, UI routes, sync providers, sync engine, sync CLI).
 
 ## Specs
 
@@ -243,7 +245,7 @@ Read these files BEFORE implementing any phase. They contain exact data models, 
 ## Planned Features (post-Phase 14)
 
 Key upcoming features documented in PLAN.md and SPEC.md:
-- **Phase 15:** Gemini provider — Google Takeout import (`aw import gemini`)
+- **Phase 15:** ~~Gemini provider — Google Takeout import (`aw import gemini`)~~ (done)
 - **Phase 16:** Voice input via Whisper (`aw listen`)
 - **Phase 17:** Alexa integration
 - **Scraper providers:** Browser-based data collection (Playwright): claude-web, chatgpt-web, gemini-web, perplexity-web

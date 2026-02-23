@@ -13,6 +13,7 @@ from anticlaw.core.models import Chat, ChatData
 from anticlaw.core.storage import ChatStorage
 from anticlaw.providers.llm.chatgpt import ChatGPTProvider
 from anticlaw.providers.llm.claude import ClaudeProvider
+from anticlaw.providers.llm.gemini import GeminiProvider
 
 log = logging.getLogger(__name__)
 
@@ -141,6 +142,73 @@ def import_chatgpt(
     # Parse the export
     click.echo(f"Parsing {export_path.name}...")
     chat_data_list = provider.parse_export_zip(export_path, scrub=scrub)
+
+    if not chat_data_list:
+        click.echo("No conversations found in export.")
+        return
+
+    # Import each conversation
+    imported = 0
+    skipped = 0
+
+    with click.progressbar(chat_data_list, label="Importing", show_pos=True) as bar:
+        for chat_data in bar:
+            target_dir = home_path / "_inbox"
+
+            # Convert ChatData → Chat
+            chat = _chat_data_to_chat(chat_data)
+
+            # Generate filename and check for duplicates
+            filename = storage.chat_filename(chat)
+            target_path = target_dir / filename
+
+            if target_path.exists():
+                skipped += 1
+                continue
+
+            storage.write_chat(target_path, chat)
+            imported += 1
+
+    # Summary
+    click.echo()
+    click.echo("Import complete:")
+    click.echo(f"  Imported: {imported}")
+    if skipped:
+        click.echo(f"  Skipped (already exist): {skipped}")
+    click.echo("  All sent to: _inbox/")
+    if scrub:
+        click.echo("  Secret scrubbing: enabled")
+
+
+@import_group.command("gemini")
+@click.argument("export_path", type=click.Path(exists=True, path_type=Path))
+@click.option("--scrub", is_flag=True, help="Redact detected secrets (API keys, passwords).")
+@click.option(
+    "--home",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Override ACL_HOME path.",
+)
+def import_gemini(
+    export_path: Path,
+    scrub: bool,
+    home: Path | None,
+) -> None:
+    """Import conversations from a Google Takeout Gemini export.
+
+    EXPORT_PATH is the path to the Google Takeout ZIP file or extracted
+    directory containing Gemini conversation data
+    (Google Takeout > select Gemini > download ZIP).
+    """
+    home_path = home or resolve_home()
+    storage = ChatStorage(home_path)
+    storage.init_home()
+
+    provider = GeminiProvider()
+
+    # Parse the export
+    click.echo(f"Parsing {export_path.name}...")
+    chat_data_list = provider.parse_takeout_zip(export_path, scrub=scrub)
 
     if not chat_data_list:
         click.echo("No conversations found in export.")
