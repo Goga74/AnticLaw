@@ -68,6 +68,22 @@ def import_claude(
     if projects_meta:
         click.echo(f"Found {len(projects_meta)} projects in export.")
 
+    # Create project folders from projects.json (even without chat mapping)
+    # This ensures knowledge docs and project metadata are always saved.
+    created_projects: set[str] = set()
+    for proj_uuid, proj_meta in projects_meta.items():
+        proj_name = proj_meta.get("name", "")
+        if not proj_name:
+            continue
+        dir_name = safe_filename(proj_name)
+        if dir_name not in created_projects:
+            target = home_path / dir_name
+            if not (target / "_project.yaml").exists():
+                _create_project_with_meta(
+                    storage, home_path, proj_name, proj_uuid, projects_meta,
+                )
+            created_projects.add(dir_name)
+
     # Load explicit project mapping if provided (overrides projects.json)
     project_map: dict[str, str] = {}
     if mapping:
@@ -77,7 +93,6 @@ def import_claude(
     # Import each conversation
     imported = 0
     skipped = 0
-    created_projects: set[str] = set()
 
     with click.progressbar(chat_data_list, label="Importing", show_pos=True) as bar:
         for chat_data in bar:
