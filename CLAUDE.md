@@ -106,6 +106,7 @@ src/anticlaw/
     ├── scan_cmd.py           # ✅ aw scan [path] [--watch]
     ├── api_cmd.py            # ✅ aw api start [--port] [--host]
     ├── listen_cmd.py         # ✅ aw listen [--continuous] [--mode ask] (voice input)
+    ├── clear_cmd.py          # ✅ aw clear [--all] (delete _inbox/_archive contents)
     ├── provider_cmd.py       # aw providers ...
     ├── sync_cmd.py           # ✅ aw send <chat-id>, aw chat <project> (bidirectional sync)
     ├── daemon_cmd.py         # ✅ aw daemon start/stop/status/install/uninstall/logs
@@ -179,6 +180,8 @@ aw listen                        # Voice query → search results
 aw listen --continuous           # Keep listening for queries
 aw listen --mode ask             # Voice question → LLM answer
 aw listen --model small          # Use larger Whisper model
+aw clear                         # Delete all files in _inbox/ (with confirmation)
+aw clear --all                   # Delete _inbox/ + _archive/ + rebuild index
 ```
 
 ## File Format: Chat (.md)
@@ -210,7 +213,7 @@ There are three main approaches...
 
 ## Current Phase
 
-Phase 16 complete. Next: Phase 17 (Alexa integration).
+Phase 16 complete. Next: Phase 17 (Playwright scraper for chat→project mapping).
 
 ### Completed
 - **Phase 0:** Scaffolding — pyproject.toml, directory structure, `aw --version` ✅
@@ -232,7 +235,7 @@ Phase 16 complete. Next: Phase 17 (Alexa integration).
 - **Phase 16:** Voice input via Whisper — InputProvider Protocol + InputInfo (fifth provider family), WhisperInputProvider (faster-whisper CTranslate2 backend, models: tiny/base/small/medium, sounddevice recording, silence detection with auto-stop, push-to-talk mode, Russian + English auto-detect via Whisper), CLI: `aw listen` (single query → search → results), `aw listen --continuous` (loop mode), `aw listen --mode ask` (voice Q&A via Ollama), `--model`/`--language`/`--push-to-talk` overrides, graceful fallback when faster-whisper/sounddevice not installed, config: `voice` section (model, language, push_to_talk, silence_threshold, max_duration), deps: `voice` extra (faster-whisper, sounddevice, numpy) ✅
 
 ### Test coverage
-889 unit tests passing (models, fileutil, storage, config, registry, claude provider, chatgpt provider, gemini provider, import CLI (claude + chatgpt + gemini), cross-provider import (3-provider), init CLI, meta_db, search, search CLI, project CLI, context store, hooks, MCP tools, MCP CLI, embedding provider, vector index, advanced search tiers, fallback behavior, entities, graph, graph CLI, ollama client, summarizer, tagger, Q&A, LLM CLI, backup base, backup local, backup gdrive, watcher, watcher draft detection, scheduler, IPC, service, daemon CLI, backup CLI, cron CLI, retention, antientropy, knowledge CLI, source models, local files provider, meta_db source files, search unified, scan CLI, API server, UI routes, sync providers, sync engine, sync CLI, input base, whisper input, listen CLI).
+937 unit tests passing (models, fileutil, storage, config, registry, claude provider, chatgpt provider, gemini provider, import CLI (claude + chatgpt + gemini), cross-provider import (3-provider), init CLI, meta_db, search, search CLI, project CLI, context store, hooks, MCP tools, MCP CLI, embedding provider, vector index, advanced search tiers, fallback behavior, entities, graph, graph CLI, ollama client, summarizer, tagger, Q&A, LLM CLI, backup base, backup local, backup gdrive, watcher, watcher draft detection, scheduler, IPC, service, daemon CLI, backup CLI, cron CLI, retention, antientropy, knowledge CLI, source models, local files provider, meta_db source files, search unified, scan CLI, API server, UI routes, sync providers, sync engine, sync CLI, input base, whisper input, listen CLI, clear CLI).
 
 ## Specs
 
@@ -257,7 +260,8 @@ Read these files BEFORE implementing any phase. They contain exact data models, 
 Key upcoming features documented in PLAN.md and SPEC.md:
 - **Phase 15:** ~~Gemini provider — Google Takeout import (`aw import gemini`)~~ (done)
 - **Phase 16:** ~~Voice input via Whisper (`aw listen`)~~ (done)
-- **Phase 17:** Alexa integration
+- **Phase 17:** Playwright scraper — browser-based chat→project mapping (`aw scrape claude`)
+- **Phase 18:** Alexa integration
 - **Scraper providers:** Browser-based data collection (Playwright): claude-web, chatgpt-web, gemini-web, perplexity-web
 - **6 provider families:** LLM, Backup, Embedding, Source, Input, Scraper
 

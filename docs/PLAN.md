@@ -1254,7 +1254,28 @@ CLI:
 
 ---
 
-### Phase 17: Alexa Integration (Days 50–55)
+### Phase 17: Playwright Scraper for Project Mapping (Days 50–53)
+
+```
+Goal: Collect chat→project mapping from claude.ai browser session.
+```
+
+**Prerequisite:** Phase 2 (Claude import).
+
+**Components:**
+- `src/anticlaw/providers/scraper/claude.py` — Playwright script: login to claude.ai, enumerate projects in sidebar, collect `{chat_uuid: project_name}` mapping
+- Save output as `mapping.json` (reusable for future imports)
+- Also collect: project Instructions (system prompt → `prompt_template` in `_project.yaml`), Project Knowledge files (supplement what export provides)
+- CLI: `aw scrape claude [--output mapping.json]`
+- `aw import claude <dir> --mapping mapping.json` routes chats to correct project folders
+- Requires: `pip install anticlaw[scraper]` (playwright)
+- One-time use, not for ongoing sync
+
+**Deliverable:** `aw scrape claude` → `mapping.json` → `aw import claude export.zip --mapping mapping.json` → chats land in correct project folders
+
+---
+
+### Phase 18: Alexa Integration (Days 54–59)
 
 ```
 Goal: Ask AnticLaw questions via Amazon Alexa.
@@ -1331,6 +1352,7 @@ Ollama       → ollama.com (for embeddings + local LLM)
 | **14** | **39–42** | **Bidirectional LLM Sync** | **`aw send`, `aw sync`, `aw push`, `aw pull`** |
 | **15** | **43–45** | **Gemini Provider** | **`aw import gemini`** |
 | **16** | **46–49** | **Voice input (Whisper)** | **`aw listen`** |
-| **17** | **50–55** | **Alexa integration** | **`aw tunnel start`, Alexa Skill** |
+| **17** | **50–53** | **Playwright scraper** | **`aw scrape claude`** |
+| **18** | **54–59** | **Alexa integration** | **`aw tunnel start`, Alexa Skill** |
 
-**Total: ~55 working days to v2.0**
+**Total: ~59 working days to v2.0**
