@@ -201,14 +201,22 @@ class ClaudeProvider:
         return _extract_projects_map(export_path)
 
     def load_project_mapping(self, mapping_path: Path) -> dict[str, str]:
-        """Load a chat_uuid → project_name mapping from JSON file.
+        """Load a chat_uuid → project_folder_name mapping from JSON file.
 
-        This file is typically produced by the Playwright scraper.
+        Supports two formats:
+        - New format (from HTTP scraper): {"chats": {uuid: folder}, "projects": {...}, ...}
+        - Legacy format: {uuid: project_name} (flat dict)
         """
         raw = mapping_path.read_text(encoding="utf-8")
         mapping = json.loads(raw)
         if not isinstance(mapping, dict):
-            raise ValueError("Project mapping must be a JSON object {uuid: project_name}")
+            raise ValueError("Project mapping must be a JSON object")
+
+        # New format: {"chats": {...}, "projects": {...}, "scraped_at": "..."}
+        if "chats" in mapping and isinstance(mapping["chats"], dict):
+            return mapping["chats"]
+
+        # Legacy format: flat {uuid: project_name}
         return mapping
 
 

@@ -511,6 +511,27 @@ class TestProjectMapping:
         assert mapping["28d595a3-5db0-492d-a49a-af74f13de505"] == "Project Alpha"
         assert mapping["aabbccdd-1234-5678-9012-abcdef012345"] == "Project Beta"
 
+    def test_load_new_format_mapping(self, tmp_path: Path):
+        """New scraper format: {chats: {...}, projects: {...}, scraped_at: ...}."""
+        new_format = {
+            "chats": {
+                "28d595a3-5db0-492d-a49a-af74f13de505": "project-alpha",
+                "aabbccdd-1234-5678-9012-abcdef012345": "project-beta",
+            },
+            "projects": {
+                "proj-1": {"name": "Project Alpha", "instructions": "Be helpful"},
+            },
+            "scraped_at": "2026-02-26T12:00:00Z",
+        }
+        path = tmp_path / "new_mapping.json"
+        path.write_text(json.dumps(new_format))
+
+        provider = ClaudeProvider()
+        mapping = provider.load_project_mapping(path)
+
+        assert mapping["28d595a3-5db0-492d-a49a-af74f13de505"] == "project-alpha"
+        assert mapping["aabbccdd-1234-5678-9012-abcdef012345"] == "project-beta"
+
     def test_invalid_mapping_format(self, tmp_path: Path):
         path = tmp_path / "bad.json"
         path.write_text('["not", "a", "dict"]')
