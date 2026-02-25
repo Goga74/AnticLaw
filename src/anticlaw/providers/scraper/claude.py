@@ -53,6 +53,7 @@ class ClaudeScraper:
         self._projects: list[ScrapedProject] = []
         self._mapping: dict[str, str] = {}
         self._session_path = _default_session_path(home)
+        self._intercepted_urls: list[str] = []
 
     @property
     def name(self) -> str:
@@ -98,7 +99,15 @@ class ClaudeScraper:
                 self._discover_org_id(page)
                 self._fetch_projects(page)
                 self._fetch_all_chats(page)
-            finally:
+            except Exception:
+                # Keep browser open so user can inspect state
+                log.error("Scraper error — keeping browser open for 30s for inspection.")
+                print("[scraper] Error occurred. Browser stays open for 30s...")
+                print(f"[scraper] Current URL: {page.url}")
+                time.sleep(30)
+                page.context.browser.close()
+                raise
+            else:
                 page.context.browser.close()
 
         if output:
@@ -131,6 +140,7 @@ class ClaudeScraper:
             storage_state=str(self._session_path),
         )
         page = context.new_page()
+        self._install_response_interceptor(page)
 
         page.goto("https://claude.ai")
 
@@ -148,6 +158,7 @@ class ClaudeScraper:
 
         if _AUTHENTICATED_URL.search(current_url):
             log.info("Using saved session.")
+            self._post_login_debug(page)
             return page
 
         # Session expired
@@ -163,6 +174,7 @@ class ClaudeScraper:
         browser = pw.chromium.launch(headless=False)
         context = browser.new_context()
         page = context.new_page()
+        self._install_response_interceptor(page)
 
         page.goto("https://claude.ai/login")
         log.info("Waiting for user to log in at claude.ai...")
@@ -177,6 +189,8 @@ class ClaudeScraper:
         # Save session for future runs
         self._save_session(context)
 
+        self._post_login_debug(page)
+
         return page
 
     def _save_session(self, context) -> None:
@@ -185,27 +199,133 @@ class ClaudeScraper:
         context.storage_state(path=str(self._session_path))
         log.info("Session saved to %s", self._session_path)
 
+    def _install_response_interceptor(self, page) -> None:
+        """Install a response handler that records all API URLs."""
+
+        def _on_response(response):
+            url = response.url
+            if "/api/" in url:
+                self._intercepted_urls.append(url)
+
+        page.on("response", _on_response)
+
+    def _post_login_debug(self, page) -> None:
+        """Wait for network idle after login and print debug info."""
+        try:
+            page.wait_for_load_state("networkidle", timeout=10_000)
+        except Exception:
+            print("[scraper] Warning: networkidle timeout (page may still be loading)")
+
+        print(f"[scraper] Current URL: {page.url}")
+        if self._intercepted_urls:
+            print(f"[scraper] Intercepted {len(self._intercepted_urls)} API responses:")
+            for url in self._intercepted_urls:
+                print(f"  {url}")
+        else:
+            print("[scraper] No API responses intercepted yet.")
+
     def _discover_org_id(self, page) -> None:
-        """Discover organization ID from API calls."""
+        """Discover organization ID using multiple methods.
+
+        Tries three approaches in order:
+        1. Scan intercepted response URLs for /api/organizations/{uuid}/
+        2. Direct fetch of /api/auth/current_user
+        3. Extract from page JS context (__NEXT_DATA__ or body text)
+        """
         if self._org_id:
             return
 
-        # Try to get org ID from the bootstrap API call
-        response = page.request.get("https://claude.ai/api/auth/current_user")
-        if response.ok:
-            data = response.json()
-            memberships = data.get("memberships", [])
-            if memberships:
-                org = memberships[0].get("organization", {})
-                self._org_id = org.get("uuid", "")
+        # Method 1: scan intercepted URLs
+        print("[scraper] Method 1: scanning intercepted URLs for org ID...")
+        for url in self._intercepted_urls:
+            match = _ORG_PATTERN.search(url)
+            if match:
+                self._org_id = match.group(1)
+                print(f"[scraper] Found org ID in intercepted URL: {self._org_id}")
+                log.info("Organization ID (from intercepted URL): %s", self._org_id)
+                return
 
-        if not self._org_id:
-            raise RuntimeError(
-                "Could not discover organization ID. "
-                "Make sure you are logged into claude.ai."
+        print(f"[scraper] No org ID in {len(self._intercepted_urls)} intercepted URLs.")
+
+        # Method 2: direct API fetch
+        print("[scraper] Method 2: fetching /api/auth/current_user...")
+        try:
+            response = page.request.get("https://claude.ai/api/auth/current_user")
+            print(f"[scraper] Response status: {response.status}")
+
+            if response.ok:
+                try:
+                    data = response.json()
+                except Exception as exc:
+                    body_text = response.text()
+                    print(f"[scraper] Response is not JSON: {body_text[:500]}")
+                    log.warning("current_user response not JSON: %s", exc)
+                    data = {}
+
+                print(f"[scraper] Response keys: {list(data.keys()) if isinstance(data, dict) else type(data).__name__}")
+
+                memberships = data.get("memberships", []) if isinstance(data, dict) else []
+                if memberships:
+                    print(f"[scraper] Found {len(memberships)} membership(s)")
+                    org = memberships[0].get("organization", {})
+                    self._org_id = org.get("uuid", "")
+                    if self._org_id:
+                        print(f"[scraper] Found org ID: {self._org_id}")
+                        log.info("Organization ID (from API): %s", self._org_id)
+                        return
+                    print(f"[scraper] Organization object: {org}")
+                else:
+                    # Print account_uuid or other identifiers if present
+                    for key in ("uuid", "id", "account", "account_uuid"):
+                        if key in data:
+                            print(f"[scraper] data['{key}'] = {data[key]}")
+            else:
+                body_text = response.text()
+                print(f"[scraper] HTTP {response.status}: {body_text[:500]}")
+        except Exception as exc:
+            print(f"[scraper] API fetch failed: {exc}")
+
+        # Method 3: page JS context
+        print("[scraper] Method 3: checking page JS context...")
+        try:
+            js_data = page.evaluate(
+                "() => { try { return JSON.stringify(window.__NEXT_DATA__); } catch(e) { return null; } }"
             )
+            if js_data:
+                print(f"[scraper] __NEXT_DATA__ (first 500 chars): {js_data[:500]}")
+                match = _ORG_PATTERN.search(js_data)
+                if match:
+                    self._org_id = match.group(1)
+                    print(f"[scraper] Found org ID in __NEXT_DATA__: {self._org_id}")
+                    log.info("Organization ID (from JS): %s", self._org_id)
+                    return
+            else:
+                print("[scraper] __NEXT_DATA__ is empty/null")
+        except Exception as exc:
+            print(f"[scraper] JS evaluation failed: {exc}")
 
-        log.info("Organization ID: %s", self._org_id)
+        # Try body text as last resort
+        try:
+            body_snippet = page.evaluate(
+                "() => document.body ? document.body.innerText.substring(0, 1000) : ''"
+            )
+            if body_snippet:
+                print(f"[scraper] Page body (first 500 chars): {body_snippet[:500]}")
+                match = _ORG_PATTERN.search(body_snippet)
+                if match:
+                    self._org_id = match.group(1)
+                    print(f"[scraper] Found org ID in page body: {self._org_id}")
+                    log.info("Organization ID (from page body): %s", self._org_id)
+                    return
+        except Exception as exc:
+            print(f"[scraper] Body text extraction failed: {exc}")
+
+        # All methods exhausted
+        print("[scraper] All 3 methods failed to discover org ID.")
+        raise RuntimeError(
+            "Could not discover organization ID. "
+            "Make sure you are logged into claude.ai."
+        )
 
     def _fetch_projects(self, page) -> None:
         """Fetch all projects from the API."""
