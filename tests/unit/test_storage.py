@@ -77,8 +77,8 @@ class TestChatRoundTrip:
         assert loaded.remote_id == chat.remote_id
         assert loaded.tags == chat.tags
         assert loaded.summary == chat.summary
-        assert loaded.importance == str(chat.importance)
-        assert loaded.status == str(chat.status)
+        assert loaded.importance == "high"
+        assert loaded.status == "active"
 
     def test_messages_round_trip(self, tmp_path: Path):
         storage = ChatStorage(tmp_path)
@@ -126,6 +126,61 @@ class TestChatRoundTrip:
         assert loaded.messages == []
 
 
+class TestEnumSerialization:
+    def test_importance_writes_as_value(self, tmp_path: Path):
+        """Importance enum should serialize as 'medium', not 'Importance.MEDIUM'."""
+        storage = ChatStorage(tmp_path)
+        chat = _make_chat(importance=Importance.MEDIUM)
+        path = tmp_path / "enum-test.md"
+        storage.write_chat(path, chat)
+
+        raw = path.read_text(encoding="utf-8")
+        assert "Importance.MEDIUM" not in raw
+        assert "importance: medium" in raw
+
+    def test_status_writes_as_value(self, tmp_path: Path):
+        """Status enum should serialize as 'active', not 'Status.ACTIVE'."""
+        storage = ChatStorage(tmp_path)
+        chat = _make_chat(status=Status.ACTIVE)
+        path = tmp_path / "status-test.md"
+        storage.write_chat(path, chat)
+
+        raw = path.read_text(encoding="utf-8")
+        assert "Status.ACTIVE" not in raw
+        assert "status: active" in raw
+
+    def test_string_importance_still_works(self, tmp_path: Path):
+        """If importance is already a plain string, it should serialize fine."""
+        storage = ChatStorage(tmp_path)
+        chat = _make_chat(importance="high")
+        path = tmp_path / "str-imp.md"
+        storage.write_chat(path, chat)
+
+        loaded = storage.read_chat(path)
+        assert loaded.importance == "high"
+
+    def test_remote_project_id_empty_becomes_null(self, tmp_path: Path):
+        """Empty remote_project_id should serialize as null, not ''."""
+        storage = ChatStorage(tmp_path)
+        chat = _make_chat(remote_project_id="")
+        path = tmp_path / "null-rpid.md"
+        storage.write_chat(path, chat)
+
+        raw = path.read_text(encoding="utf-8")
+        assert "remote_project_id: ''" not in raw
+        assert "remote_project_id: null" in raw or "remote_project_id:" in raw
+
+    def test_remote_project_id_with_value(self, tmp_path: Path):
+        """Non-empty remote_project_id should be preserved."""
+        storage = ChatStorage(tmp_path)
+        chat = _make_chat(remote_project_id="proj-uuid-123")
+        path = tmp_path / "rpid.md"
+        storage.write_chat(path, chat)
+
+        loaded = storage.read_chat(path)
+        assert loaded.remote_project_id == "proj-uuid-123"
+
+
 class TestProjectRoundTrip:
     def test_write_then_read(self, tmp_path: Path):
         storage = ChatStorage(tmp_path)
@@ -139,7 +194,7 @@ class TestProjectRoundTrip:
         assert loaded.name == project.name
         assert loaded.description == project.description
         assert loaded.tags == project.tags
-        assert loaded.status == str(project.status)
+        assert loaded.status == "active"
         assert loaded.providers == project.providers
         assert loaded.settings == project.settings
 

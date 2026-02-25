@@ -9,7 +9,55 @@ from click.testing import CliRunner
 from anticlaw.cli.main import cli
 
 
+SAMPLE_PROJECTS = [
+    {
+        "uuid": "proj-java",
+        "name": "Java Course",
+        "description": "Learning Java",
+        "created_at": "2025-01-10T10:00:00.000Z",
+        "updated_at": "2025-02-15T12:00:00.000Z",
+    },
+    {
+        "uuid": "proj-git",
+        "name": "Git Workflows",
+        "description": "",
+        "created_at": "2025-01-20T08:00:00.000Z",
+    },
+]
+
 SAMPLE_CONVERSATIONS = [
+    {
+        "uuid": "chat-001",
+        "name": "First Chat",
+        "created_at": "2025-02-18T14:30:00.000Z",
+        "updated_at": "2025-02-18T15:00:00.000Z",
+        "project_uuid": "proj-java",
+        "chat_messages": [
+            {"sender": "human", "text": "Hello!", "created_at": "2025-02-18T14:30:00.000Z"},
+            {"sender": "assistant", "text": "Hi there!", "created_at": "2025-02-18T14:31:00.000Z"},
+        ],
+    },
+    {
+        "uuid": "chat-002",
+        "name": "Second Chat",
+        "created_at": "2025-02-19T10:00:00.000Z",
+        "project_uuid": "proj-git",
+        "chat_messages": [
+            {"sender": "human", "text": "Question.", "created_at": "2025-02-19T10:00:00.000Z"},
+            {"sender": "assistant", "text": "Answer.", "created_at": "2025-02-19T10:01:00.000Z"},
+        ],
+    },
+    {
+        "uuid": "chat-003",
+        "name": "Third Chat",
+        "created_at": "2025-02-20T09:00:00.000Z",
+        "chat_messages": [
+            {"sender": "human", "text": "No project.", "created_at": "2025-02-20T09:00:00.000Z"},
+        ],
+    },
+]
+
+CONVERSATIONS_NO_PROJECTS = [
     {
         "uuid": "chat-001",
         "name": "First Chat",
@@ -36,10 +84,12 @@ MAPPING = {
 }
 
 
-def _make_zip(tmp_path: Path) -> Path:
+def _make_zip(tmp_path: Path, conversations=None, projects=None) -> Path:
     zip_path = tmp_path / "export.zip"
     with zipfile.ZipFile(zip_path, "w") as zf:
-        zf.writestr("conversations.json", json.dumps(SAMPLE_CONVERSATIONS))
+        zf.writestr("conversations.json", json.dumps(conversations or CONVERSATIONS_NO_PROJECTS))
+        if projects is not None:
+            zf.writestr("projects.json", json.dumps(projects))
     return zip_path
 
 
@@ -67,6 +117,55 @@ class TestImportClaude:
         inbox = home / "_inbox"
         md_files = list(inbox.glob("*.md"))
         assert len(md_files) == 2
+
+    def test_import_with_projects_json(self, tmp_path: Path):
+        """Chats with project_uuid get routed to project folders via projects.json."""
+        zip_path = _make_zip(tmp_path, SAMPLE_CONVERSATIONS, SAMPLE_PROJECTS)
+        home = tmp_path / "anticlaw_home"
+
+        runner = CliRunner()
+        result = runner.invoke(cli, [
+            "import", "claude", str(zip_path), "--home", str(home),
+        ])
+
+        assert result.exit_code == 0, result.output
+        assert "Imported: 3" in result.output
+        assert "projects in export" in result.output
+
+        # chat-001 in java-course, chat-002 in git-workflows, chat-003 in _inbox
+        java_dir = home / "java-course"
+        assert java_dir.exists(), f"Expected java-course dir, got: {list(home.iterdir())}"
+        assert (java_dir / "_project.yaml").exists()
+        java_chats = list(java_dir.glob("*.md"))
+        assert len(java_chats) == 1
+
+        git_dir = home / "git-workflows"
+        assert git_dir.exists()
+        assert (git_dir / "_project.yaml").exists()
+        git_chats = list(git_dir.glob("*.md"))
+        assert len(git_chats) == 1
+
+        inbox_files = list((home / "_inbox").glob("*.md"))
+        assert len(inbox_files) == 1
+
+    def test_project_yaml_has_metadata(self, tmp_path: Path):
+        """_project.yaml should contain name, description, remote_id from projects.json."""
+        import yaml
+
+        zip_path = _make_zip(tmp_path, SAMPLE_CONVERSATIONS, SAMPLE_PROJECTS)
+        home = tmp_path / "anticlaw_home"
+
+        runner = CliRunner()
+        result = runner.invoke(cli, [
+            "import", "claude", str(zip_path), "--home", str(home),
+        ])
+        assert result.exit_code == 0, result.output
+
+        project_yaml = home / "java-course" / "_project.yaml"
+        data = yaml.safe_load(project_yaml.read_text(encoding="utf-8"))
+        assert data["name"] == "Java Course"
+        assert data["description"] == "Learning Java"
+        assert data["providers"]["claude"]["remote_id"] == "proj-java"
 
     def test_import_with_mapping(self, tmp_path: Path):
         zip_path = _make_zip(tmp_path)
@@ -178,3 +277,38 @@ class TestImportClaude:
         result = runner.invoke(cli, ["import", "claude", "--help"])
         assert result.exit_code == 0
         assert "Claude.ai" in result.output
+
+    def test_frontmatter_enum_values(self, tmp_path: Path):
+        """Verify imported chats have proper enum values in YAML, not Enum repr."""
+        zip_path = _make_zip(tmp_path)
+        home = tmp_path / "anticlaw_home"
+
+        runner = CliRunner()
+        result = runner.invoke(cli, [
+            "import", "claude", str(zip_path), "--home", str(home),
+        ])
+        assert result.exit_code == 0
+
+        md_files = list((home / "_inbox").glob("*.md"))
+        assert len(md_files) > 0
+        content = md_files[0].read_text(encoding="utf-8")
+        assert "Importance." not in content
+        assert "Status." not in content
+        assert "importance: medium" in content
+        assert "status: active" in content
+
+    def test_frontmatter_null_remote_project_id(self, tmp_path: Path):
+        """Chats without a project should have null remote_project_id, not empty string."""
+        zip_path = _make_zip(tmp_path)
+        home = tmp_path / "anticlaw_home"
+
+        runner = CliRunner()
+        result = runner.invoke(cli, [
+            "import", "claude", str(zip_path), "--home", str(home),
+        ])
+        assert result.exit_code == 0
+
+        md_files = list((home / "_inbox").glob("*.md"))
+        content = md_files[0].read_text(encoding="utf-8")
+        assert "remote_project_id: ''" not in content
+        assert "remote_project_id: null" in content or "remote_project_id:" in content

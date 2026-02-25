@@ -99,6 +99,9 @@ class ClaudeProvider:
     ) -> list[ChatData]:
         """Extract and parse conversations.json from a Claude export ZIP.
 
+        Also reads projects.json (if present) to populate project_name
+        and remote_project_id on each ChatData.
+
         Args:
             zip_path: Path to the Claude export ZIP file.
             scrub: If True, redact detected secrets from message content.
@@ -112,10 +115,15 @@ class ClaudeProvider:
         if not isinstance(conversations, list):
             raise ValueError("Expected a JSON array of conversations")
 
+        # Read projects.json for folder mapping
+        projects_map = _extract_projects_map(zip_path)
+        if projects_map:
+            log.info("Found %d projects in projects.json", len(projects_map))
+
         chats: list[ChatData] = []
         for conv in conversations:
             try:
-                chat_data = _parse_conversation(conv, scrub=scrub)
+                chat_data = _parse_conversation(conv, scrub=scrub, projects_map=projects_map)
                 chats.append(chat_data)
             except Exception:
                 uuid = conv.get("uuid", "unknown")
@@ -123,6 +131,15 @@ class ClaudeProvider:
 
         log.info("Parsed %d conversations from %s", len(chats), zip_path.name)
         return chats
+
+    def extract_projects(self, zip_path: Path) -> dict[str, dict]:
+        """Extract project metadata from projects.json in a Claude export ZIP.
+
+        Returns:
+            Dict mapping project UUID to project metadata dict
+            (keys: name, description, created_at, updated_at).
+        """
+        return _extract_projects_map(zip_path)
 
     def load_project_mapping(self, mapping_path: Path) -> dict[str, str]:
         """Load a chat_uuid → project_name mapping from JSON file.
@@ -134,6 +151,30 @@ class ClaudeProvider:
         if not isinstance(mapping, dict):
             raise ValueError("Project mapping must be a JSON object {uuid: project_name}")
         return mapping
+
+
+def _extract_projects_map(zip_path: Path) -> dict[str, dict]:
+    """Read projects.json from ZIP and return {uuid: project_dict}."""
+    try:
+        with zipfile.ZipFile(zip_path, "r") as zf:
+            # Try common locations
+            for candidate in ["projects.json", "claude/projects.json"]:
+                if candidate in zf.namelist():
+                    raw = zf.read(candidate).decode("utf-8")
+                    projects = json.loads(raw)
+                    if isinstance(projects, list):
+                        return {p["uuid"]: p for p in projects if "uuid" in p}
+
+            # Fallback: find any projects.json
+            for name in zf.namelist():
+                if name.endswith("projects.json"):
+                    raw = zf.read(name).decode("utf-8")
+                    projects = json.loads(raw)
+                    if isinstance(projects, list):
+                        return {p["uuid"]: p for p in projects if "uuid" in p}
+    except Exception:
+        log.debug("No projects.json found or failed to parse", exc_info=True)
+    return {}
 
 
 def _extract_conversations_json(zip_path: Path) -> str:
@@ -155,7 +196,11 @@ def _extract_conversations_json(zip_path: Path) -> str:
     )
 
 
-def _parse_conversation(conv: dict, scrub: bool = False) -> ChatData:
+def _parse_conversation(
+    conv: dict,
+    scrub: bool = False,
+    projects_map: dict[str, dict] | None = None,
+) -> ChatData:
     """Parse a single conversation dict from Claude's conversations.json."""
     uuid = conv.get("uuid", "")
     title = conv.get("name", "") or "Untitled"
@@ -182,10 +227,26 @@ def _parse_conversation(conv: dict, scrub: bool = False) -> ChatData:
 
         messages.append(ChatMessage(role=role, content=content, timestamp=timestamp))
 
+    # Resolve project association
+    # Claude exports may use "project_uuid" (string) or "project" (object with uuid)
+    project_uuid = conv.get("project_uuid", "")
+    if not project_uuid:
+        project_field = conv.get("project")
+        if isinstance(project_field, dict):
+            project_uuid = project_field.get("uuid", "")
+        elif isinstance(project_field, str):
+            project_uuid = project_field
+
+    project_name = ""
+    if project_uuid and projects_map and project_uuid in projects_map:
+        project_name = projects_map[project_uuid].get("name", "")
+
     return ChatData(
         remote_id=uuid,
         title=title,
         provider="claude",
+        remote_project_id=project_uuid,
+        project_name=project_name,
         model=conv.get("model", ""),
         created=created_at,
         updated=updated_at,

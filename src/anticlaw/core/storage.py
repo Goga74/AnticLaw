@@ -78,13 +78,14 @@ class ChatStorage:
 
     def write_project(self, path: Path, project: Project) -> None:
         """Write a Project dataclass to a _project.yaml file."""
+        status_val = project.status.value if hasattr(project.status, "value") else project.status
         data = {
             "name": project.name,
             "description": project.description,
             "created": _format_dt(project.created),
             "updated": _format_dt(project.updated),
             "tags": project.tags,
-            "status": str(project.status),
+            "status": status_val,
             "providers": project.providers,
             "settings": project.settings,
         }
@@ -146,6 +147,10 @@ class ChatStorage:
 
     def write_chat(self, path: Path, chat: Chat) -> None:
         """Write a Chat dataclass to a .md file with YAML frontmatter."""
+        # Extract enum .value if present, otherwise use as-is
+        importance_val = chat.importance.value if hasattr(chat.importance, "value") else chat.importance
+        status_val = chat.status.value if hasattr(chat.status, "value") else chat.status
+
         meta = {
             "id": chat.id,
             "title": chat.title,
@@ -153,14 +158,14 @@ class ChatStorage:
             "updated": _format_dt(chat.updated),
             "provider": chat.provider,
             "remote_id": chat.remote_id,
-            "remote_project_id": chat.remote_project_id,
+            "remote_project_id": chat.remote_project_id or None,
             "model": chat.model,
             "tags": chat.tags,
             "summary": chat.summary,
             "token_count": chat.token_count,
             "message_count": chat.message_count or len(chat.messages),
-            "importance": str(chat.importance),
-            "status": str(chat.status),
+            "importance": importance_val,
+            "status": status_val,
         }
 
         body = _render_messages(chat.messages)

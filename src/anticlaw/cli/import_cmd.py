@@ -9,7 +9,7 @@ import click
 
 from anticlaw.core.config import resolve_home
 from anticlaw.core.fileutil import safe_filename
-from anticlaw.core.models import Chat, ChatData
+from anticlaw.core.models import Chat, ChatData, Project
 from anticlaw.core.storage import ChatStorage
 from anticlaw.providers.llm.chatgpt import ChatGPTProvider
 from anticlaw.providers.llm.claude import ClaudeProvider
@@ -55,7 +55,7 @@ def import_claude(
 
     provider = ClaudeProvider()
 
-    # Parse the export
+    # Parse the export (also reads projects.json for folder mapping)
     click.echo(f"Parsing {export_path.name}...")
     chat_data_list = provider.parse_export_zip(export_path, scrub=scrub)
 
@@ -63,7 +63,12 @@ def import_claude(
         click.echo("No conversations found in export.")
         return
 
-    # Load project mapping if provided
+    # Extract project metadata for _project.yaml creation
+    projects_meta = provider.extract_projects(export_path)
+    if projects_meta:
+        click.echo(f"Found {len(projects_meta)} projects in export.")
+
+    # Load explicit project mapping if provided (overrides projects.json)
     project_map: dict[str, str] = {}
     if mapping:
         project_map = provider.load_project_mapping(mapping)
@@ -72,15 +77,27 @@ def import_claude(
     # Import each conversation
     imported = 0
     skipped = 0
+    created_projects: set[str] = set()
 
     with click.progressbar(chat_data_list, label="Importing", show_pos=True) as bar:
         for chat_data in bar:
-            # Determine target directory
-            project_name = project_map.get(chat_data.remote_id)
+            # Determine target directory:
+            # 1. Explicit --mapping flag takes priority
+            # 2. project_name from projects.json (auto-detected)
+            # 3. Fallback to _inbox
+            project_name = project_map.get(chat_data.remote_id) or chat_data.project_name
+
             if project_name:
-                target_dir = home_path / safe_filename(project_name)
-                if not (target_dir / "_project.yaml").exists():
-                    storage.create_project(project_name)
+                dir_name = safe_filename(project_name)
+                target_dir = home_path / dir_name
+
+                if dir_name not in created_projects:
+                    if not (target_dir / "_project.yaml").exists():
+                        _create_project_with_meta(
+                            storage, home_path, project_name,
+                            chat_data.remote_project_id, projects_meta,
+                        )
+                    created_projects.add(dir_name)
             else:
                 target_dir = home_path / "_inbox"
 
@@ -104,12 +121,14 @@ def import_claude(
     click.echo(f"  Imported: {imported}")
     if skipped:
         click.echo(f"  Skipped (already exist): {skipped}")
-    if project_map:
-        mapped = sum(1 for cd in chat_data_list if cd.remote_id in project_map)
-        click.echo(f"  Mapped to projects: {mapped}")
-        click.echo(f"  Sent to _inbox: {len(chat_data_list) - mapped}")
+    mapped_count = sum(1 for cd in chat_data_list if project_map.get(cd.remote_id) or cd.project_name)
+    if mapped_count:
+        click.echo(f"  Mapped to projects: {mapped_count}")
+        click.echo(f"  Sent to _inbox: {len(chat_data_list) - mapped_count}")
     else:
         click.echo("  All sent to: _inbox/")
+    if created_projects:
+        click.echo(f"  Projects created: {len(created_projects)}")
     if scrub:
         click.echo("  Secret scrubbing: enabled")
 
@@ -245,6 +264,36 @@ def import_gemini(
     click.echo("  All sent to: _inbox/")
     if scrub:
         click.echo("  Secret scrubbing: enabled")
+
+
+def _create_project_with_meta(
+    storage: ChatStorage,
+    home_path: Path,
+    project_name: str,
+    project_uuid: str,
+    projects_meta: dict[str, dict],
+) -> None:
+    """Create a project folder with _project.yaml, enriched with Claude metadata."""
+    from anticlaw.core.fileutil import ensure_dir
+
+    dir_name = safe_filename(project_name)
+    project_dir = home_path / dir_name
+    ensure_dir(project_dir)
+
+    project = Project(name=project_name)
+
+    # Enrich with metadata from projects.json if available
+    if project_uuid and project_uuid in projects_meta:
+        meta = projects_meta[project_uuid]
+        project.description = meta.get("description", "")
+        if meta.get("created_at"):
+            from anticlaw.providers.llm.claude import _parse_timestamp
+
+            project.created = _parse_timestamp(meta.get("created_at"))
+            project.updated = _parse_timestamp(meta.get("updated_at")) or project.created
+        project.providers = {"claude": {"remote_id": project_uuid}}
+
+    storage.write_project(project_dir / "_project.yaml", project)
 
 
 def _chat_data_to_chat(data: ChatData) -> Chat:

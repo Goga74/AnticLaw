@@ -102,17 +102,70 @@ CONVERSATIONS_WITH_SECRETS = [
     },
 ]
 
+SAMPLE_PROJECTS = [
+    {
+        "uuid": "proj-001",
+        "name": "Java Fundamentals",
+        "description": "Java programming course",
+        "created_at": "2025-01-10T10:00:00.000Z",
+        "updated_at": "2025-02-15T12:00:00.000Z",
+    },
+    {
+        "uuid": "proj-002",
+        "name": "Git Workflows",
+        "description": "",
+        "created_at": "2025-01-20T08:00:00.000Z",
+        "updated_at": "2025-02-10T09:00:00.000Z",
+    },
+]
+
+CONVERSATIONS_WITH_PROJECTS = [
+    {
+        "uuid": "chat-in-java",
+        "name": "Generics Discussion",
+        "created_at": "2025-02-18T14:30:00.000Z",
+        "project_uuid": "proj-001",
+        "chat_messages": [
+            {"sender": "human", "text": "Explain generics.", "created_at": "2025-02-18T14:30:00.000Z"},
+            {"sender": "assistant", "text": "Generics allow...", "created_at": "2025-02-18T14:31:00.000Z"},
+        ],
+    },
+    {
+        "uuid": "chat-in-git",
+        "name": "Rebase vs Merge",
+        "created_at": "2025-02-19T10:00:00.000Z",
+        "project_uuid": "proj-002",
+        "chat_messages": [
+            {"sender": "human", "text": "When to rebase?", "created_at": "2025-02-19T10:00:00.000Z"},
+        ],
+    },
+    {
+        "uuid": "chat-no-project",
+        "name": "Random Question",
+        "created_at": "2025-02-20T11:00:00.000Z",
+        "chat_messages": [
+            {"sender": "human", "text": "What time is it?", "created_at": "2025-02-20T11:00:00.000Z"},
+        ],
+    },
+]
+
 SAMPLE_PROJECT_MAPPING = {
     "28d595a3-5db0-492d-a49a-af74f13de505": "Project Alpha",
     "aabbccdd-1234-5678-9012-abcdef012345": "Project Beta",
 }
 
 
-def _make_export_zip(tmp_path: Path, conversations: list[dict]) -> Path:
-    """Create a test Claude export ZIP with conversations.json."""
+def _make_export_zip(
+    tmp_path: Path,
+    conversations: list[dict],
+    projects: list[dict] | None = None,
+) -> Path:
+    """Create a test Claude export ZIP with conversations.json and optional projects.json."""
     zip_path = tmp_path / "claude-export.zip"
     with zipfile.ZipFile(zip_path, "w") as zf:
         zf.writestr("conversations.json", json.dumps(conversations))
+        if projects is not None:
+            zf.writestr("projects.json", json.dumps(projects))
     return zip_path
 
 
@@ -282,6 +335,114 @@ class TestScrubbing:
     def test_clean_text_unchanged(self):
         text = "This is normal text about authentication."
         assert scrub_text(text) == text
+
+
+class TestProjectsJson:
+    def test_parse_with_projects(self, tmp_path: Path):
+        """Conversations with project_uuid get project_name from projects.json."""
+        zip_path = _make_export_zip(tmp_path, CONVERSATIONS_WITH_PROJECTS, SAMPLE_PROJECTS)
+        provider = ClaudeProvider()
+        chats = provider.parse_export_zip(zip_path)
+
+        assert len(chats) == 3
+
+        java_chat = next(c for c in chats if c.remote_id == "chat-in-java")
+        assert java_chat.project_name == "Java Fundamentals"
+        assert java_chat.remote_project_id == "proj-001"
+
+        git_chat = next(c for c in chats if c.remote_id == "chat-in-git")
+        assert git_chat.project_name == "Git Workflows"
+        assert git_chat.remote_project_id == "proj-002"
+
+        no_proj = next(c for c in chats if c.remote_id == "chat-no-project")
+        assert no_proj.project_name == ""
+        assert no_proj.remote_project_id == ""
+
+    def test_no_projects_json(self, tmp_path: Path):
+        """Without projects.json, chats have empty project_name."""
+        zip_path = _make_export_zip(tmp_path, SAMPLE_CONVERSATIONS)
+        provider = ClaudeProvider()
+        chats = provider.parse_export_zip(zip_path)
+
+        for chat in chats:
+            assert chat.project_name == ""
+
+    def test_project_field_as_dict(self, tmp_path: Path):
+        """Handle project as nested object with uuid key."""
+        conversations = [
+            {
+                "uuid": "chat-nested",
+                "name": "Nested Project",
+                "created_at": "2025-02-18T14:30:00.000Z",
+                "project": {"uuid": "proj-001", "name": "Inline Name"},
+                "chat_messages": [
+                    {"sender": "human", "text": "Hello", "created_at": "2025-02-18T14:30:00.000Z"},
+                ],
+            },
+        ]
+        zip_path = _make_export_zip(tmp_path, conversations, SAMPLE_PROJECTS)
+        provider = ClaudeProvider()
+        chats = provider.parse_export_zip(zip_path)
+
+        assert chats[0].remote_project_id == "proj-001"
+        assert chats[0].project_name == "Java Fundamentals"
+
+    def test_project_field_as_string(self, tmp_path: Path):
+        """Handle project as a plain UUID string."""
+        conversations = [
+            {
+                "uuid": "chat-string-proj",
+                "name": "String Project",
+                "created_at": "2025-02-18T14:30:00.000Z",
+                "project": "proj-002",
+                "chat_messages": [
+                    {"sender": "human", "text": "Hello", "created_at": "2025-02-18T14:30:00.000Z"},
+                ],
+            },
+        ]
+        zip_path = _make_export_zip(tmp_path, conversations, SAMPLE_PROJECTS)
+        provider = ClaudeProvider()
+        chats = provider.parse_export_zip(zip_path)
+
+        assert chats[0].remote_project_id == "proj-002"
+        assert chats[0].project_name == "Git Workflows"
+
+    def test_extract_projects(self, tmp_path: Path):
+        """extract_projects() returns project metadata."""
+        zip_path = _make_export_zip(tmp_path, [], SAMPLE_PROJECTS)
+        provider = ClaudeProvider()
+        projects = provider.extract_projects(zip_path)
+
+        assert len(projects) == 2
+        assert projects["proj-001"]["name"] == "Java Fundamentals"
+        assert projects["proj-002"]["name"] == "Git Workflows"
+
+    def test_extract_projects_no_file(self, tmp_path: Path):
+        """extract_projects() returns empty dict when no projects.json."""
+        zip_path = _make_export_zip(tmp_path, [])
+        provider = ClaudeProvider()
+        projects = provider.extract_projects(zip_path)
+        assert projects == {}
+
+    def test_unknown_project_uuid_ignored(self, tmp_path: Path):
+        """If project_uuid doesn't match any project, project_name stays empty."""
+        conversations = [
+            {
+                "uuid": "chat-orphan",
+                "name": "Orphan Chat",
+                "created_at": "2025-02-18T14:30:00.000Z",
+                "project_uuid": "proj-nonexistent",
+                "chat_messages": [
+                    {"sender": "human", "text": "Hello", "created_at": "2025-02-18T14:30:00.000Z"},
+                ],
+            },
+        ]
+        zip_path = _make_export_zip(tmp_path, conversations, SAMPLE_PROJECTS)
+        provider = ClaudeProvider()
+        chats = provider.parse_export_zip(zip_path)
+
+        assert chats[0].remote_project_id == "proj-nonexistent"
+        assert chats[0].project_name == ""
 
 
 class TestProjectMapping:

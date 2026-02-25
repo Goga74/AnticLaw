@@ -158,6 +158,7 @@ class ChatData:
     title: str = ""
     provider: str = ""
     remote_project_id: str = ""
+    project_name: str = ""
     model: str = ""
     created: datetime = field(default_factory=_now)
     updated: datetime = field(default_factory=_now)
