@@ -254,9 +254,10 @@ class LLMProvider(Protocol):
 ```
 
 **Known limitations:**
-- Project membership (chat→project link) may not be in export — requires Playwright supplement.
-- Project Knowledge files not exported — requires Playwright.
+- **Project membership is NOT in export** — `conversations.json` has no `project_uuid` field, and `projects.json` has no chat list. All imported chats go to `_inbox/`. Users must manually organize or use scraper (Phase 12+) to collect project mapping from claude.ai web interface.
+- Project Knowledge files not exported — requires Playwright scraper.
 - Deleted chats not included.
+- Export format as of 2026-02-25 (may change in future Claude updates).
 
 ### 5.3 ChatGPT Provider ✅
 

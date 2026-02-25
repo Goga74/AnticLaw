@@ -92,6 +92,27 @@ class ClaudeProvider:
 
     # --- Export parsing (the main capability) ---
 
+    def parse_export(
+        self,
+        export_path: Path,
+        scrub: bool = False,
+    ) -> list[ChatData]:
+        """Parse conversations from a Claude export ZIP or directory.
+
+        Also reads projects.json (if present) to populate project_name
+        and remote_project_id on each ChatData.
+
+        Args:
+            export_path: Path to the Claude export ZIP file or directory.
+            scrub: If True, redact detected secrets from message content.
+
+        Returns:
+            List of ChatData ready for local storage.
+        """
+        if export_path.is_dir():
+            return self._parse_from_dir(export_path, scrub=scrub)
+        return self._parse_from_zip(export_path, scrub=scrub)
+
     def parse_export_zip(
         self,
         zip_path: Path,
@@ -109,6 +130,10 @@ class ClaudeProvider:
         Returns:
             List of ChatData ready for local storage.
         """
+        return self._parse_from_zip(zip_path, scrub=scrub)
+
+    def _parse_from_zip(self, zip_path: Path, scrub: bool = False) -> list[ChatData]:
+        """Parse from a ZIP file."""
         raw_json = _extract_conversations_json(zip_path)
         conversations = json.loads(raw_json)
 
@@ -132,14 +157,48 @@ class ClaudeProvider:
         log.info("Parsed %d conversations from %s", len(chats), zip_path.name)
         return chats
 
-    def extract_projects(self, zip_path: Path) -> dict[str, dict]:
-        """Extract project metadata from projects.json in a Claude export ZIP.
+    def _parse_from_dir(self, dir_path: Path, scrub: bool = False) -> list[ChatData]:
+        """Parse from an extracted export directory."""
+        conv_file = dir_path / "conversations.json"
+        if not conv_file.exists():
+            raise FileNotFoundError(
+                f"No conversations.json found in {dir_path}. "
+                f"Expected a Claude.ai data export directory."
+            )
+
+        raw_json = conv_file.read_text(encoding="utf-8")
+        conversations = json.loads(raw_json)
+
+        if not isinstance(conversations, list):
+            raise ValueError("Expected a JSON array of conversations")
+
+        # Read projects.json for folder mapping
+        projects_map = _read_projects_from_dir(dir_path)
+        if projects_map:
+            log.info("Found %d projects in projects.json", len(projects_map))
+
+        chats: list[ChatData] = []
+        for conv in conversations:
+            try:
+                chat_data = _parse_conversation(conv, scrub=scrub, projects_map=projects_map)
+                chats.append(chat_data)
+            except Exception:
+                uuid = conv.get("uuid", "unknown")
+                log.warning("Failed to parse conversation %s", uuid, exc_info=True)
+
+        log.info("Parsed %d conversations from %s", len(chats), dir_path.name)
+        return chats
+
+    def extract_projects(self, export_path: Path) -> dict[str, dict]:
+        """Extract project metadata from projects.json in a Claude export ZIP or directory.
 
         Returns:
             Dict mapping project UUID to project metadata dict
-            (keys: name, description, created_at, updated_at).
+            (keys: name, description, created_at, updated_at, docs, etc.).
         """
-        return _extract_projects_map(zip_path)
+        if export_path.is_dir():
+            return _read_projects_from_dir(export_path)
+        return _extract_projects_map(export_path)
 
     def load_project_mapping(self, mapping_path: Path) -> dict[str, str]:
         """Load a chat_uuid → project_name mapping from JSON file.
@@ -153,6 +212,15 @@ class ClaudeProvider:
         return mapping
 
 
+def _filter_projects(projects: list[dict]) -> dict[str, dict]:
+    """Build {uuid: project_dict}, skipping starter projects."""
+    return {
+        p["uuid"]: p
+        for p in projects
+        if "uuid" in p and not p.get("is_starter_project", False)
+    }
+
+
 def _extract_projects_map(zip_path: Path) -> dict[str, dict]:
     """Read projects.json from ZIP and return {uuid: project_dict}."""
     try:
@@ -163,7 +231,7 @@ def _extract_projects_map(zip_path: Path) -> dict[str, dict]:
                     raw = zf.read(candidate).decode("utf-8")
                     projects = json.loads(raw)
                     if isinstance(projects, list):
-                        return {p["uuid"]: p for p in projects if "uuid" in p}
+                        return _filter_projects(projects)
 
             # Fallback: find any projects.json
             for name in zf.namelist():
@@ -171,9 +239,24 @@ def _extract_projects_map(zip_path: Path) -> dict[str, dict]:
                     raw = zf.read(name).decode("utf-8")
                     projects = json.loads(raw)
                     if isinstance(projects, list):
-                        return {p["uuid"]: p for p in projects if "uuid" in p}
+                        return _filter_projects(projects)
     except Exception:
         log.debug("No projects.json found or failed to parse", exc_info=True)
+    return {}
+
+
+def _read_projects_from_dir(dir_path: Path) -> dict[str, dict]:
+    """Read projects.json from a directory and return {uuid: project_dict}."""
+    proj_file = dir_path / "projects.json"
+    if not proj_file.exists():
+        return {}
+    try:
+        raw = proj_file.read_text(encoding="utf-8")
+        projects = json.loads(raw)
+        if isinstance(projects, list):
+            return _filter_projects(projects)
+    except Exception:
+        log.debug("Failed to parse projects.json from directory", exc_info=True)
     return {}
 
 

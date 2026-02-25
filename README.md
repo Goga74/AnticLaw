@@ -80,6 +80,8 @@ aw init
 # 2. Import your conversations
 aw import claude ~/Downloads/claude-export.zip
 aw import chatgpt ~/Downloads/chatgpt-export.zip
+# Note: Claude export does not include project mapping — all chats go to _inbox/
+# Use `aw move`, `aw inbox --auto`, or wait for scraper support to organize
 
 # 3. Search across everything
 aw search "authentication"

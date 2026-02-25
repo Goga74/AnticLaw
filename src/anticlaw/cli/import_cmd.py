@@ -44,10 +44,10 @@ def import_claude(
     mapping: Path | None,
     home: Path | None,
 ) -> None:
-    """Import conversations from a Claude.ai data export ZIP.
+    """Import conversations from a Claude.ai data export ZIP or directory.
 
-    EXPORT_PATH is the path to the ZIP file downloaded from Claude.ai
-    (Settings > Privacy > Export Data).
+    EXPORT_PATH is the path to the ZIP file or extracted directory from
+    Claude.ai (Settings > Privacy > Export Data).
     """
     home_path = home or resolve_home()
     storage = ChatStorage(home_path)
@@ -57,7 +57,7 @@ def import_claude(
 
     # Parse the export (also reads projects.json for folder mapping)
     click.echo(f"Parsing {export_path.name}...")
-    chat_data_list = provider.parse_export_zip(export_path, scrub=scrub)
+    chat_data_list = provider.parse_export(export_path, scrub=scrub)
 
     if not chat_data_list:
         click.echo("No conversations found in export.")
@@ -293,7 +293,29 @@ def _create_project_with_meta(
             project.updated = _parse_timestamp(meta.get("updated_at")) or project.created
         project.providers = {"claude": {"remote_id": project_uuid}}
 
+        # Save knowledge docs if present
+        docs = meta.get("docs", [])
+        if docs:
+            _save_knowledge_docs(project_dir, docs)
+
     storage.write_project(project_dir / "_project.yaml", project)
+
+
+def _save_knowledge_docs(project_dir: Path, docs: list[dict]) -> None:
+    """Save project knowledge documents to <project>/_knowledge/."""
+    from anticlaw.core.fileutil import ensure_dir
+
+    # Filter to docs that have both filename and content
+    valid_docs = [d for d in docs if d.get("filename") and d.get("content")]
+    if not valid_docs:
+        return
+
+    knowledge_dir = project_dir / "_knowledge"
+    ensure_dir(knowledge_dir)
+
+    for doc in valid_docs:
+        doc_path = knowledge_dir / doc["filename"]
+        doc_path.write_text(doc["content"], encoding="utf-8")
 
 
 def _chat_data_to_chat(data: ChatData) -> Chat:

@@ -215,7 +215,7 @@ Phase 16 complete. Next: Phase 17 (Alexa integration).
 ### Completed
 - **Phase 0:** Scaffolding — pyproject.toml, directory structure, `aw --version` ✅
 - **Phase 1:** Core models + storage — dataclasses, ChatStorage, config loader, fileutil ✅
-- **Phase 2:** Claude provider + import — ProviderRegistry, LLMProvider Protocol, ClaudeProvider, `aw import claude` ✅
+- **Phase 2:** Claude provider + import — ProviderRegistry, LLMProvider Protocol, ClaudeProvider, `aw import claude` ✅ (Note: export format lacks project mapping; all chats → _inbox/)
 - **Phase 3:** SQLite metadata + basic search — MetaDB (WAL+FTS5), search dispatcher, `aw search`, `aw list/show/move/tag/create/reindex` ✅
 - **Phase 4:** MCP server — FastMCP with 13 tools, context-store with 6 chunking strategies, TurnTracker, `aw mcp start/install` ✅
 - **Phase 5:** Advanced search — Tiers 2-5 (BM25 via bm25s, fuzzy via rapidfuzz, semantic via ChromaDB+Ollama embeddings, hybrid fusion), EmbeddingProvider Protocol, OllamaEmbeddingProvider, VectorIndex, auto-tier selection, graceful degradation ✅

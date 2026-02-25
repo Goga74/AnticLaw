@@ -297,7 +297,7 @@ Goal: Import Claude.ai export into local file structure.
 - [x] Duplicate skipping, empty export, help text
 - [x] ProviderRegistry: register, get, list, families, entries
 
-**Deliverable:** `aw import claude export.zip` → files appear in `~/anticlaw/` ✅
+**Deliverable:** `aw import claude export.zip` → files appear in `~/anticlaw/_inbox/` (no project folders due to export format limitation; manual organization or scraper required for project mapping) ✅
 
 ---
 

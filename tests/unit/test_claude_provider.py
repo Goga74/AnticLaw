@@ -461,3 +461,144 @@ class TestProjectMapping:
         provider = ClaudeProvider()
         with pytest.raises(ValueError, match="JSON object"):
             provider.load_project_mapping(path)
+
+
+def _make_export_dir(
+    tmp_path: Path,
+    conversations: list[dict],
+    projects: list[dict] | None = None,
+) -> Path:
+    """Create a test Claude export directory with conversations.json and optional projects.json."""
+    export_dir = tmp_path / "claude-export"
+    export_dir.mkdir()
+    (export_dir / "conversations.json").write_text(json.dumps(conversations), encoding="utf-8")
+    if projects is not None:
+        (export_dir / "projects.json").write_text(json.dumps(projects), encoding="utf-8")
+    return export_dir
+
+
+class TestParseExportDir:
+    """Tests for directory-based import (parse_export with a dir path)."""
+
+    def test_basic_parse_dir(self, tmp_path: Path):
+        export_dir = _make_export_dir(tmp_path, SAMPLE_CONVERSATIONS)
+        provider = ClaudeProvider()
+        chats = provider.parse_export(export_dir)
+        assert len(chats) == 2
+
+    def test_dir_conversation_fields(self, tmp_path: Path):
+        export_dir = _make_export_dir(tmp_path, SAMPLE_CONVERSATIONS)
+        provider = ClaudeProvider()
+        chats = provider.parse_export(export_dir)
+
+        chat = chats[0]
+        assert chat.remote_id == "28d595a3-5db0-492d-a49a-af74f13de505"
+        assert chat.title == "Auth Discussion"
+        assert chat.provider == "claude"
+
+    def test_dir_with_projects(self, tmp_path: Path):
+        export_dir = _make_export_dir(tmp_path, CONVERSATIONS_WITH_PROJECTS, SAMPLE_PROJECTS)
+        provider = ClaudeProvider()
+        chats = provider.parse_export(export_dir)
+
+        assert len(chats) == 3
+        java_chat = next(c for c in chats if c.remote_id == "chat-in-java")
+        assert java_chat.project_name == "Java Fundamentals"
+
+    def test_dir_missing_conversations_json(self, tmp_path: Path):
+        empty_dir = tmp_path / "empty-export"
+        empty_dir.mkdir()
+
+        provider = ClaudeProvider()
+        with pytest.raises(FileNotFoundError, match="conversations.json"):
+            provider.parse_export(empty_dir)
+
+    def test_dir_with_scrub(self, tmp_path: Path):
+        export_dir = _make_export_dir(tmp_path, CONVERSATIONS_WITH_SECRETS)
+        provider = ClaudeProvider()
+        chats = provider.parse_export(export_dir, scrub=True)
+
+        msg0 = chats[0].messages[0].content
+        assert "sk-ant-" not in msg0
+        assert "[REDACTED" in msg0
+
+    def test_dir_empty_conversations(self, tmp_path: Path):
+        export_dir = _make_export_dir(tmp_path, [])
+        provider = ClaudeProvider()
+        chats = provider.parse_export(export_dir)
+        assert chats == []
+
+    def test_parse_export_zip_still_works(self, tmp_path: Path):
+        """parse_export() with a ZIP path works the same as parse_export_zip()."""
+        zip_path = _make_export_zip(tmp_path, SAMPLE_CONVERSATIONS)
+        provider = ClaudeProvider()
+        chats = provider.parse_export(zip_path)
+        assert len(chats) == 2
+
+    def test_extract_projects_from_dir(self, tmp_path: Path):
+        export_dir = _make_export_dir(tmp_path, [], SAMPLE_PROJECTS)
+        provider = ClaudeProvider()
+        projects = provider.extract_projects(export_dir)
+        assert len(projects) == 2
+        assert projects["proj-001"]["name"] == "Java Fundamentals"
+
+
+class TestStarterProjectFiltering:
+    """Tests for skipping starter projects (is_starter_project == true)."""
+
+    def test_starter_project_excluded_from_map(self, tmp_path: Path):
+        projects = [
+            {"uuid": "proj-real", "name": "Real Project", "created_at": "2025-01-10T10:00:00.000Z"},
+            {"uuid": "proj-starter", "name": "Starter", "is_starter_project": True, "created_at": "2025-01-10T10:00:00.000Z"},
+        ]
+        zip_path = _make_export_zip(tmp_path, [], projects)
+        provider = ClaudeProvider()
+        result = provider.extract_projects(zip_path)
+
+        assert "proj-real" in result
+        assert "proj-starter" not in result
+
+    def test_starter_project_excluded_from_dir(self, tmp_path: Path):
+        projects = [
+            {"uuid": "proj-real", "name": "Real Project"},
+            {"uuid": "proj-starter", "name": "Starter", "is_starter_project": True},
+        ]
+        export_dir = _make_export_dir(tmp_path, [], projects)
+        provider = ClaudeProvider()
+        result = provider.extract_projects(export_dir)
+
+        assert "proj-real" in result
+        assert "proj-starter" not in result
+
+    def test_starter_chat_goes_to_inbox(self, tmp_path: Path):
+        """Chat belonging to a starter project should have empty project_name."""
+        projects = [
+            {"uuid": "proj-starter", "name": "Starter", "is_starter_project": True},
+        ]
+        conversations = [
+            {
+                "uuid": "chat-in-starter",
+                "name": "Starter Chat",
+                "created_at": "2025-02-18T14:30:00.000Z",
+                "project_uuid": "proj-starter",
+                "chat_messages": [
+                    {"sender": "human", "text": "Hello", "created_at": "2025-02-18T14:30:00.000Z"},
+                ],
+            },
+        ]
+        zip_path = _make_export_zip(tmp_path, conversations, projects)
+        provider = ClaudeProvider()
+        chats = provider.parse_export_zip(zip_path)
+
+        assert chats[0].project_name == ""
+        assert chats[0].remote_project_id == "proj-starter"
+
+    def test_non_starter_false_is_included(self, tmp_path: Path):
+        """is_starter_project: false should be treated as normal."""
+        projects = [
+            {"uuid": "proj-normal", "name": "Normal", "is_starter_project": False},
+        ]
+        zip_path = _make_export_zip(tmp_path, [], projects)
+        provider = ClaudeProvider()
+        result = provider.extract_projects(zip_path)
+        assert "proj-normal" in result

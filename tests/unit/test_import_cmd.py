@@ -312,3 +312,274 @@ class TestImportClaude:
         content = md_files[0].read_text(encoding="utf-8")
         assert "remote_project_id: ''" not in content
         assert "remote_project_id: null" in content or "remote_project_id:" in content
+
+
+def _make_export_dir(tmp_path: Path, conversations=None, projects=None) -> Path:
+    """Create a test Claude export directory."""
+    export_dir = tmp_path / "claude-export"
+    export_dir.mkdir()
+    (export_dir / "conversations.json").write_text(
+        json.dumps(conversations or CONVERSATIONS_NO_PROJECTS), encoding="utf-8"
+    )
+    if projects is not None:
+        (export_dir / "projects.json").write_text(
+            json.dumps(projects), encoding="utf-8"
+        )
+    return export_dir
+
+
+class TestImportClaudeFromDir:
+    """Tests for importing from an extracted directory instead of ZIP."""
+
+    def test_import_dir_to_inbox(self, tmp_path: Path):
+        export_dir = _make_export_dir(tmp_path)
+        home = tmp_path / "anticlaw_home"
+
+        runner = CliRunner()
+        result = runner.invoke(cli, [
+            "import", "claude", str(export_dir), "--home", str(home),
+        ])
+
+        assert result.exit_code == 0, result.output
+        assert "Imported: 2" in result.output
+
+        inbox = home / "_inbox"
+        md_files = list(inbox.glob("*.md"))
+        assert len(md_files) == 2
+
+    def test_import_dir_with_projects(self, tmp_path: Path):
+        export_dir = _make_export_dir(tmp_path, SAMPLE_CONVERSATIONS, SAMPLE_PROJECTS)
+        home = tmp_path / "anticlaw_home"
+
+        runner = CliRunner()
+        result = runner.invoke(cli, [
+            "import", "claude", str(export_dir), "--home", str(home),
+        ])
+
+        assert result.exit_code == 0, result.output
+        assert "Imported: 3" in result.output
+
+        java_dir = home / "java-course"
+        assert java_dir.exists()
+        assert (java_dir / "_project.yaml").exists()
+
+    def test_import_dir_with_mapping(self, tmp_path: Path):
+        export_dir = _make_export_dir(tmp_path)
+        mapping_path = _make_mapping(tmp_path)
+        home = tmp_path / "anticlaw_home"
+
+        runner = CliRunner()
+        result = runner.invoke(cli, [
+            "import", "claude", str(export_dir),
+            "--mapping", str(mapping_path),
+            "--home", str(home),
+        ])
+
+        assert result.exit_code == 0, result.output
+        assert "Imported: 2" in result.output
+        project_dir = home / "project-alpha"
+        assert project_dir.exists()
+
+
+class TestSkipStarterProjects:
+    """Tests for skipping starter projects during import."""
+
+    def test_starter_project_not_created(self, tmp_path: Path):
+        projects = [
+            {
+                "uuid": "proj-java",
+                "name": "Java Course",
+                "description": "Learning Java",
+                "created_at": "2025-01-10T10:00:00.000Z",
+            },
+            {
+                "uuid": "proj-starter",
+                "name": "Starter Project",
+                "is_starter_project": True,
+                "created_at": "2025-01-10T10:00:00.000Z",
+            },
+        ]
+        conversations = [
+            {
+                "uuid": "chat-in-java",
+                "name": "Java Chat",
+                "created_at": "2025-02-18T14:30:00.000Z",
+                "project_uuid": "proj-java",
+                "chat_messages": [
+                    {"sender": "human", "text": "Hello!", "created_at": "2025-02-18T14:30:00.000Z"},
+                ],
+            },
+            {
+                "uuid": "chat-in-starter",
+                "name": "Starter Chat",
+                "created_at": "2025-02-19T10:00:00.000Z",
+                "project_uuid": "proj-starter",
+                "chat_messages": [
+                    {"sender": "human", "text": "Hi starter!", "created_at": "2025-02-19T10:00:00.000Z"},
+                ],
+            },
+        ]
+        zip_path = _make_zip(tmp_path, conversations, projects)
+        home = tmp_path / "anticlaw_home"
+
+        runner = CliRunner()
+        result = runner.invoke(cli, [
+            "import", "claude", str(zip_path), "--home", str(home),
+        ])
+
+        assert result.exit_code == 0, result.output
+        assert "Imported: 2" in result.output
+
+        # Java project created, starter project NOT created
+        assert (home / "java-course").exists()
+        assert not (home / "starter-project").exists()
+
+        # Starter chat goes to _inbox
+        inbox_files = list((home / "_inbox").glob("*.md"))
+        assert len(inbox_files) == 1
+
+
+class TestKnowledgeDocs:
+    """Tests for saving project knowledge documents from projects.json."""
+
+    def test_knowledge_docs_saved(self, tmp_path: Path):
+        projects = [
+            {
+                "uuid": "proj-java",
+                "name": "Java Course",
+                "description": "Learning Java",
+                "created_at": "2025-01-10T10:00:00.000Z",
+                "docs": [
+                    {
+                        "uuid": "doc-001",
+                        "filename": "architecture.md",
+                        "content": "# Architecture\n\nUse microservices.",
+                        "created_at": "2025-01-15T10:00:00.000Z",
+                    },
+                    {
+                        "uuid": "doc-002",
+                        "filename": "style-guide.txt",
+                        "content": "Use 4-space indentation.",
+                        "created_at": "2025-01-16T10:00:00.000Z",
+                    },
+                ],
+            },
+        ]
+        conversations = [
+            {
+                "uuid": "chat-001",
+                "name": "First Chat",
+                "created_at": "2025-02-18T14:30:00.000Z",
+                "project_uuid": "proj-java",
+                "chat_messages": [
+                    {"sender": "human", "text": "Hello!", "created_at": "2025-02-18T14:30:00.000Z"},
+                ],
+            },
+        ]
+        zip_path = _make_zip(tmp_path, conversations, projects)
+        home = tmp_path / "anticlaw_home"
+
+        runner = CliRunner()
+        result = runner.invoke(cli, [
+            "import", "claude", str(zip_path), "--home", str(home),
+        ])
+
+        assert result.exit_code == 0, result.output
+
+        knowledge_dir = home / "java-course" / "_knowledge"
+        assert knowledge_dir.exists()
+
+        arch_file = knowledge_dir / "architecture.md"
+        assert arch_file.exists()
+        assert "microservices" in arch_file.read_text(encoding="utf-8")
+
+        style_file = knowledge_dir / "style-guide.txt"
+        assert style_file.exists()
+        assert "4-space" in style_file.read_text(encoding="utf-8")
+
+    def test_no_knowledge_dir_when_no_docs(self, tmp_path: Path):
+        """_knowledge/ should NOT be created if project has no docs."""
+        zip_path = _make_zip(tmp_path, SAMPLE_CONVERSATIONS, SAMPLE_PROJECTS)
+        home = tmp_path / "anticlaw_home"
+
+        runner = CliRunner()
+        result = runner.invoke(cli, [
+            "import", "claude", str(zip_path), "--home", str(home),
+        ])
+
+        assert result.exit_code == 0, result.output
+
+        java_dir = home / "java-course"
+        assert java_dir.exists()
+        assert not (java_dir / "_knowledge").exists()
+
+    def test_empty_docs_list_no_knowledge_dir(self, tmp_path: Path):
+        """Empty docs list should NOT create _knowledge/ dir."""
+        projects = [
+            {
+                "uuid": "proj-java",
+                "name": "Java Course",
+                "created_at": "2025-01-10T10:00:00.000Z",
+                "docs": [],
+            },
+        ]
+        conversations = [
+            {
+                "uuid": "chat-001",
+                "name": "Chat",
+                "created_at": "2025-02-18T14:30:00.000Z",
+                "project_uuid": "proj-java",
+                "chat_messages": [
+                    {"sender": "human", "text": "Hi", "created_at": "2025-02-18T14:30:00.000Z"},
+                ],
+            },
+        ]
+        zip_path = _make_zip(tmp_path, conversations, projects)
+        home = tmp_path / "anticlaw_home"
+
+        runner = CliRunner()
+        result = runner.invoke(cli, [
+            "import", "claude", str(zip_path), "--home", str(home),
+        ])
+        assert result.exit_code == 0
+        assert not (home / "java-course" / "_knowledge").exists()
+
+    def test_doc_with_empty_content_skipped(self, tmp_path: Path):
+        """Docs with empty content or filename should be skipped."""
+        projects = [
+            {
+                "uuid": "proj-java",
+                "name": "Java Course",
+                "created_at": "2025-01-10T10:00:00.000Z",
+                "docs": [
+                    {"uuid": "doc-empty", "filename": "empty.md", "content": ""},
+                    {"uuid": "doc-noname", "filename": "", "content": "has content"},
+                    {"uuid": "doc-good", "filename": "good.md", "content": "Good content"},
+                ],
+            },
+        ]
+        conversations = [
+            {
+                "uuid": "chat-001",
+                "name": "Chat",
+                "created_at": "2025-02-18T14:30:00.000Z",
+                "project_uuid": "proj-java",
+                "chat_messages": [
+                    {"sender": "human", "text": "Hi", "created_at": "2025-02-18T14:30:00.000Z"},
+                ],
+            },
+        ]
+        zip_path = _make_zip(tmp_path, conversations, projects)
+        home = tmp_path / "anticlaw_home"
+
+        runner = CliRunner()
+        result = runner.invoke(cli, [
+            "import", "claude", str(zip_path), "--home", str(home),
+        ])
+        assert result.exit_code == 0
+
+        knowledge_dir = home / "java-course" / "_knowledge"
+        assert knowledge_dir.exists()
+        files = list(knowledge_dir.iterdir())
+        assert len(files) == 1
+        assert files[0].name == "good.md"

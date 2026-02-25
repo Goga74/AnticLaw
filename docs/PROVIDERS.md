@@ -136,7 +136,9 @@ class ClaudeProvider:
         capabilities={"export_bulk", "scrape"},
     )
     # export_bulk  → parse conversations.json from official ZIP
-    # scrape       → Playwright: project mapping, Knowledge files
+    #                 ⚠️  No project mapping in export (as of 2026-02-25)
+    #                 → All chats go to _inbox/
+    # scrape       → Playwright: collect project mapping from web UI, Knowledge files
     # No import, no sync (no API for claude.ai)
 ```
 
