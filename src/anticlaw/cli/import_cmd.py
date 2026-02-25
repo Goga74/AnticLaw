@@ -33,6 +33,11 @@ def import_group() -> None:
     help="JSON file mapping chat UUIDs to project names (from Playwright scraper).",
 )
 @click.option(
+    "--scrape",
+    is_flag=True,
+    help="Run Playwright scraper before import to collect chat→project mapping.",
+)
+@click.option(
     "--home",
     type=click.Path(path_type=Path),
     default=None,
@@ -42,6 +47,7 @@ def import_claude(
     export_path: Path,
     scrub: bool,
     mapping: Path | None,
+    scrape: bool,
     home: Path | None,
 ) -> None:
     """Import conversations from a Claude.ai data export ZIP or directory.
@@ -54,6 +60,31 @@ def import_claude(
     storage.init_home()
 
     provider = ClaudeProvider()
+
+    # Run scraper if --scrape flag is set (produces mapping on-the-fly)
+    scrape_result: dict[str, str] = {}
+    if scrape and not mapping:
+        try:
+            from anticlaw.providers.scraper.claude import ClaudeScraper
+        except ImportError:
+            click.echo(
+                "Error: scraper dependencies not installed.\n"
+                "Run: pip install anticlaw[scraper] && playwright install chromium"
+            )
+            raise SystemExit(1)
+
+        click.echo("Launching browser for scraping... Log in to claude.ai.")
+        scraper = ClaudeScraper()
+        try:
+            scrape_result = scraper.scrape()
+            stats = scraper.summary()
+            click.echo(
+                f"Scraper done: {stats['mapped_chats']} chats "
+                f"→ {stats['projects']} projects."
+            )
+        except (ImportError, RuntimeError) as err:
+            click.echo(f"Scraper error: {err}")
+            click.echo("Continuing import without project mapping.")
 
     # Parse the export (also reads projects.json for folder mapping)
     click.echo(f"Parsing {export_path.name}...")
@@ -89,6 +120,9 @@ def import_claude(
     if mapping:
         project_map = provider.load_project_mapping(mapping)
         click.echo(f"Loaded project mapping: {len(project_map)} entries.")
+    elif scrape_result:
+        project_map = scrape_result
+        click.echo(f"Using scraper mapping: {len(project_map)} entries.")
 
     # Import each conversation
     imported = 0

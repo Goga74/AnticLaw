@@ -32,6 +32,7 @@ from anticlaw.cli.project_cmd import (
     tag_cmd,
 )
 from anticlaw.cli.scan_cmd import scan_cmd
+from anticlaw.cli.scraper_cmd import scrape_group
 from anticlaw.cli.search_cmd import search_cmd
 from anticlaw.cli.sync_cmd import chat_cmd, send_cmd
 
@@ -75,6 +76,7 @@ cli.add_command(send_cmd)
 cli.add_command(chat_cmd)
 cli.add_command(listen_cmd)
 cli.add_command(clear_cmd)
+cli.add_command(scrape_group)
 
 
 if __name__ == "__main__":
