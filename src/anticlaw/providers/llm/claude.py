@@ -330,7 +330,7 @@ def _parse_conversation(
         provider="claude",
         remote_project_id=project_uuid,
         project_name=project_name,
-        model=conv.get("model", ""),
+        summary=conv.get("summary", ""),
         created=created_at,
         updated=updated_at,
         messages=messages,

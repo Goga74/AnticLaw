@@ -328,6 +328,7 @@ def _chat_data_to_chat(data: ChatData) -> Chat:
         remote_id=data.remote_id,
         remote_project_id=data.remote_project_id,
         model=data.model,
+        summary=data.summary,
         messages=data.messages,
         message_count=len(data.messages),
     )

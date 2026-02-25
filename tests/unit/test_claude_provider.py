@@ -19,7 +19,7 @@ SAMPLE_CONVERSATIONS = [
         "name": "Auth Discussion",
         "created_at": "2025-02-18T14:30:00.000Z",
         "updated_at": "2025-02-20T09:15:00.000Z",
-        "model": "claude-opus-4-6",
+        "summary": "Chose JWT for authentication.",
         "chat_messages": [
             {
                 "sender": "human",
@@ -216,7 +216,8 @@ class TestParseExportZip:
         assert chat.remote_id == "28d595a3-5db0-492d-a49a-af74f13de505"
         assert chat.title == "Auth Discussion"
         assert chat.provider == "claude"
-        assert chat.model == "claude-opus-4-6"
+        assert chat.model == ""
+        assert chat.summary == "Chose JWT for authentication."
         assert chat.created == datetime(2025, 2, 18, 14, 30, tzinfo=timezone.utc)
 
     def test_messages_parsed(self, tmp_path: Path):
@@ -287,6 +288,62 @@ class TestParseExportZip:
         chats = provider.parse_export_zip(zip_path)
         # At least the good one should be parsed
         assert len(chats) >= 1
+
+    def test_summary_field_mapped(self, tmp_path: Path):
+        """summary from conversations.json should populate ChatData.summary."""
+        conversations = [
+            {
+                "uuid": "sum-001",
+                "name": "Summary Chat",
+                "created_at": "2025-02-18T14:30:00.000Z",
+                "summary": "test summary",
+                "chat_messages": [
+                    {"sender": "human", "text": "Hello", "created_at": "2025-02-18T14:30:00.000Z"},
+                ],
+            },
+        ]
+        zip_path = _make_export_zip(tmp_path, conversations)
+        provider = ClaudeProvider()
+        chats = provider.parse_export_zip(zip_path)
+
+        assert chats[0].summary == "test summary"
+
+    def test_no_summary_defaults_empty(self, tmp_path: Path):
+        """Conversations without summary field should have empty summary."""
+        conversations = [
+            {
+                "uuid": "no-sum",
+                "name": "No Summary",
+                "created_at": "2025-02-18T14:30:00.000Z",
+                "chat_messages": [
+                    {"sender": "human", "text": "Hello", "created_at": "2025-02-18T14:30:00.000Z"},
+                ],
+            },
+        ]
+        zip_path = _make_export_zip(tmp_path, conversations)
+        provider = ClaudeProvider()
+        chats = provider.parse_export_zip(zip_path)
+
+        assert chats[0].summary == ""
+
+    def test_model_not_extracted(self, tmp_path: Path):
+        """Claude export has no model info — model should always be empty."""
+        conversations = [
+            {
+                "uuid": "mod-001",
+                "name": "Model Chat",
+                "created_at": "2025-02-18T14:30:00.000Z",
+                "model": "should-be-ignored",
+                "chat_messages": [
+                    {"sender": "human", "text": "Hello", "created_at": "2025-02-18T14:30:00.000Z"},
+                ],
+            },
+        ]
+        zip_path = _make_export_zip(tmp_path, conversations)
+        provider = ClaudeProvider()
+        chats = provider.parse_export_zip(zip_path)
+
+        assert chats[0].model == ""
 
 
 class TestScrubbing:

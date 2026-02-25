@@ -160,6 +160,7 @@ class ChatData:
     remote_project_id: str = ""
     project_name: str = ""
     model: str = ""
+    summary: str = ""
     created: datetime = field(default_factory=_now)
     updated: datetime = field(default_factory=_now)
     messages: list[ChatMessage] = field(default_factory=list)
