@@ -2,12 +2,12 @@
 
 import json
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, PropertyMock, call, patch
 
 import pytest
 
-from anticlaw.providers.scraper.base import ScraperProvider
-from anticlaw.providers.scraper.claude import ClaudeScraper
+from anticlaw.providers.scraper.base import ScrapedProject, ScraperProvider
+from anticlaw.providers.scraper.claude import ClaudeScraper, _default_session_path
 
 
 # -- Fixtures for mock API responses --
@@ -79,15 +79,23 @@ def _make_mock_page() -> MagicMock:
             return _make_mock_response(200, MOCK_CURRENT_USER)
         if url.endswith("/projects"):
             return _make_mock_response(200, MOCK_PROJECTS)
-        if f"project_uuid=proj-aaaa-1111" in url:
+        if "project_uuid=proj-aaaa-1111" in url:
             return _make_mock_response(200, MOCK_AUTH_CHATS)
-        if f"project_uuid=proj-bbbb-2222" in url:
+        if "project_uuid=proj-bbbb-2222" in url:
             return _make_mock_response(200, MOCK_CLI_CHATS)
         return _make_mock_response(404, {})
 
     page.request.get = mock_get
     page.goto = MagicMock()
     page.wait_for_url = MagicMock()
+    page.url = "https://claude.ai/new"
+
+    # Set up context → browser chain for cleanup
+    context = MagicMock()
+    context.storage_state = MagicMock()
+    page.context = context
+    context.browser = MagicMock()
+
     return page
 
 
@@ -113,6 +121,174 @@ class TestClaudeScraperProperties:
         assert scraper.mapping == {}
         assert scraper.projects == []
         assert scraper.summary() == {"projects": 0, "mapped_chats": 0}
+
+    def test_session_path_default(self):
+        scraper = ClaudeScraper()
+        assert scraper.session_path.name == "claude_session.json"
+        assert ".acl" in str(scraper.session_path)
+
+    def test_session_path_custom_home(self, tmp_path: Path):
+        scraper = ClaudeScraper(home=tmp_path)
+        assert scraper.session_path == tmp_path / ".acl" / "claude_session.json"
+
+
+class TestDefaultSessionPath:
+    def test_with_explicit_home(self, tmp_path: Path):
+        result = _default_session_path(tmp_path)
+        assert result == tmp_path / ".acl" / "claude_session.json"
+
+    def test_without_home_uses_resolve(self):
+        result = _default_session_path()
+        assert result.name == "claude_session.json"
+        assert ".acl" in str(result)
+
+
+class TestSessionPersistence:
+    """Tests for session save/load/expiry flow."""
+
+    def test_save_session(self, tmp_path: Path):
+        scraper = ClaudeScraper(home=tmp_path)
+        context = MagicMock()
+
+        scraper._save_session(context)
+
+        context.storage_state.assert_called_once_with(
+            path=str(tmp_path / ".acl" / "claude_session.json"),
+        )
+        # .acl dir should be created
+        assert (tmp_path / ".acl").exists()
+
+    def test_manual_login_saves_session(self, tmp_path: Path):
+        scraper = ClaudeScraper(home=tmp_path)
+        pw = MagicMock()
+        browser = MagicMock()
+        context = MagicMock()
+        page = _make_mock_page()
+
+        pw.chromium.launch.return_value = browser
+        browser.new_context.return_value = context
+        context.new_page.return_value = page
+
+        result = scraper._manual_login(pw)
+
+        # Browser launched headed
+        pw.chromium.launch.assert_called_once_with(headless=False)
+        # Navigated to login
+        page.goto.assert_called_once_with("https://claude.ai/login")
+        # Waited for auth URL with 10 min timeout
+        page.wait_for_url.assert_called_once()
+        timeout_arg = page.wait_for_url.call_args
+        assert timeout_arg[1]["timeout"] == 600_000
+        # Session saved
+        context.storage_state.assert_called_once()
+        assert result is page
+
+    def test_try_saved_session_valid(self, tmp_path: Path):
+        """Valid session → returns page, no deletion."""
+        scraper = ClaudeScraper(home=tmp_path)
+        # Create a fake session file
+        acl_dir = tmp_path / ".acl"
+        acl_dir.mkdir()
+        session_file = acl_dir / "claude_session.json"
+        session_file.write_text("{}", encoding="utf-8")
+
+        pw = MagicMock()
+        browser = MagicMock()
+        context = MagicMock()
+        page = MagicMock()
+        page.url = "https://claude.ai/new"
+        # wait_for_url succeeds (no exception)
+        page.wait_for_url = MagicMock()
+
+        pw.chromium.launch.return_value = browser
+        browser.new_context.return_value = context
+        context.new_page.return_value = page
+
+        result = scraper._try_saved_session(pw)
+
+        assert result is page
+        # Launched headless
+        pw.chromium.launch.assert_called_once_with(headless=True)
+        # Used storage_state
+        browser.new_context.assert_called_once_with(
+            storage_state=str(session_file),
+        )
+        # Session file NOT deleted
+        assert session_file.exists()
+
+    def test_try_saved_session_expired(self, tmp_path: Path):
+        """Expired session → returns None, deletes file."""
+        scraper = ClaudeScraper(home=tmp_path)
+        acl_dir = tmp_path / ".acl"
+        acl_dir.mkdir()
+        session_file = acl_dir / "claude_session.json"
+        session_file.write_text("{}", encoding="utf-8")
+
+        pw = MagicMock()
+        browser = MagicMock()
+        context = MagicMock()
+        page = MagicMock()
+        # Simulate redirect to login page
+        page.url = "https://claude.ai/login"
+        page.wait_for_url = MagicMock(side_effect=Exception("Timeout"))
+
+        pw.chromium.launch.return_value = browser
+        browser.new_context.return_value = context
+        context.new_page.return_value = page
+
+        result = scraper._try_saved_session(pw)
+
+        assert result is None
+        # Session file deleted
+        assert not session_file.exists()
+        # Browser closed
+        browser.close.assert_called_once()
+
+    def test_launch_authenticated_with_valid_session(self, tmp_path: Path):
+        """With valid session file → uses saved session."""
+        scraper = ClaudeScraper(home=tmp_path)
+        acl_dir = tmp_path / ".acl"
+        acl_dir.mkdir()
+        (acl_dir / "claude_session.json").write_text("{}", encoding="utf-8")
+
+        page = _make_mock_page()
+        pw = MagicMock()
+
+        with patch.object(scraper, "_try_saved_session", return_value=page):
+            result = scraper._launch_authenticated(pw)
+
+        assert result is page
+
+    def test_launch_authenticated_expired_falls_back(self, tmp_path: Path):
+        """Expired session → falls back to manual login."""
+        scraper = ClaudeScraper(home=tmp_path)
+        acl_dir = tmp_path / ".acl"
+        acl_dir.mkdir()
+        (acl_dir / "claude_session.json").write_text("{}", encoding="utf-8")
+
+        page = _make_mock_page()
+        pw = MagicMock()
+
+        with (
+            patch.object(scraper, "_try_saved_session", return_value=None),
+            patch.object(scraper, "_manual_login", return_value=page) as mock_login,
+        ):
+            result = scraper._launch_authenticated(pw)
+
+        mock_login.assert_called_once_with(pw)
+        assert result is page
+
+    def test_launch_authenticated_no_session_file(self, tmp_path: Path):
+        """No session file → goes straight to manual login."""
+        scraper = ClaudeScraper(home=tmp_path)
+        page = _make_mock_page()
+        pw = MagicMock()
+
+        with patch.object(scraper, "_manual_login", return_value=page) as mock_login:
+            result = scraper._launch_authenticated(pw)
+
+        mock_login.assert_called_once_with(pw)
+        assert result is page
 
 
 class TestOrgIdDiscovery:
@@ -247,8 +423,6 @@ class TestFetchProjectChats:
         scraper._org_id = MOCK_ORG_UUID
         page = _make_mock_page()
 
-        from anticlaw.providers.scraper.base import ScrapedProject
-
         proj = ScrapedProject(uuid="proj-aaaa-1111", name="Auth System")
         scraper._fetch_project_chats(page, proj)
 
@@ -262,8 +436,6 @@ class TestFetchProjectChats:
         scraper._org_id = MOCK_ORG_UUID
         page = _make_mock_page()
 
-        from anticlaw.providers.scraper.base import ScrapedProject
-
         proj = ScrapedProject(uuid="proj-aaaa-1111", name="Auth System")
         scraper._fetch_project_chats(page, proj)
 
@@ -276,8 +448,6 @@ class TestFetchProjectChats:
         scraper._org_id = MOCK_ORG_UUID
         page = MagicMock()
         page.request.get = lambda url: _make_mock_response(500, {})
-
-        from anticlaw.providers.scraper.base import ScrapedProject
 
         proj = ScrapedProject(uuid="proj-xxxx", name="Broken")
         scraper._fetch_project_chats(page, proj)
@@ -293,8 +463,6 @@ class TestFetchProjectChats:
         page = MagicMock()
         page.request.get = lambda url: _make_mock_response(200, wrapped)
 
-        from anticlaw.providers.scraper.base import ScrapedProject
-
         proj = ScrapedProject(uuid="proj-xxxx", name="Wrapped")
         scraper._fetch_project_chats(page, proj)
 
@@ -307,8 +475,6 @@ class TestFetchProjectChats:
         bad_chats = [{"name": "No UUID"}, {"uuid": "", "name": "Empty"}]
         page = MagicMock()
         page.request.get = lambda url: _make_mock_response(200, bad_chats)
-
-        from anticlaw.providers.scraper.base import ScrapedProject
 
         proj = ScrapedProject(uuid="proj-xxxx", name="Bad")
         scraper._fetch_project_chats(page, proj)
@@ -381,8 +547,6 @@ class TestSummary:
         scraper = ClaudeScraper()
         scraper._mapping = {"c1": "P1", "c2": "P1", "c3": "P2"}
 
-        from anticlaw.providers.scraper.base import ScrapedProject
-
         scraper._projects = [
             ScrapedProject(uuid="p1", name="P1"),
             ScrapedProject(uuid="p2", name="P2"),
@@ -397,11 +561,10 @@ class TestScrapeEndToEnd:
 
     @patch("anticlaw.providers.scraper.claude.time.sleep")
     def test_full_scrape_flow(self, mock_sleep, tmp_path: Path):
-        scraper = ClaudeScraper()
+        scraper = ClaudeScraper(home=tmp_path)
         page = _make_mock_page()
 
-        # Simulate the internal steps manually (since we can't mock sync_playwright easily)
-        scraper._wait_for_login(page)
+        # Simulate the internal steps manually
         scraper._discover_org_id(page)
         scraper._fetch_projects(page)
         scraper._fetch_all_chats(page)
@@ -425,15 +588,6 @@ class TestScrapeEndToEnd:
         stats = scraper.summary()
         assert stats["projects"] == 2
         assert stats["mapped_chats"] == 5
-
-    def test_wait_for_login_navigates(self):
-        scraper = ClaudeScraper()
-        page = _make_mock_page()
-
-        scraper._wait_for_login(page)
-
-        page.goto.assert_called_once_with("https://claude.ai")
-        page.wait_for_url.assert_called_once()
 
     def test_empty_projects_yields_empty_mapping(self):
         scraper = ClaudeScraper()

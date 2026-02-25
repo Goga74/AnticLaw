@@ -74,7 +74,7 @@ def import_claude(
             raise SystemExit(1)
 
         click.echo("Launching browser for scraping... Log in to claude.ai.")
-        scraper = ClaudeScraper()
+        scraper = ClaudeScraper(home=home_path)
         try:
             scrape_result = scraper.scrape()
             stats = scraper.summary()

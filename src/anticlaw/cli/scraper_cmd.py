@@ -50,10 +50,14 @@ def scrape_claude(output: Path, home: Path | None) -> None:
         )
         raise SystemExit(1) from err
 
-    scraper = ClaudeScraper()
+    home_path = home or resolve_home()
+    scraper = ClaudeScraper(home=home_path)
 
-    click.echo("Launching browser... Log in to claude.ai to continue.")
-    click.echo("(You have 5 minutes to complete login.)\n")
+    if scraper.session_path.exists():
+        click.echo("Using saved session.")
+    else:
+        click.echo("Launching browser... Log in to claude.ai to continue.")
+        click.echo("(You have 10 minutes to complete login.)\n")
 
     try:
         mapping = scraper.scrape(output=output)
@@ -66,6 +70,9 @@ def scrape_claude(output: Path, home: Path | None) -> None:
     except RuntimeError as err:
         click.echo(f"Error: {err}")
         raise SystemExit(1)
+
+    if scraper.session_path.exists():
+        click.echo(f"Session saved to {scraper.session_path}")
 
     stats = scraper.summary()
     projects = scraper.projects

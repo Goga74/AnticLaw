@@ -8,6 +8,7 @@ import re
 import time
 from pathlib import Path
 
+from anticlaw.core.config import resolve_home
 from anticlaw.providers.scraper.base import ScrapedProject, ScraperInfo
 
 log = logging.getLogger(__name__)
@@ -23,18 +24,35 @@ _CHATS_PATTERN = re.compile(
     r"/api/organizations/[0-9a-f-]{36}/chat_conversations\?project_uuid="
 )
 
+# URL pattern indicating an authenticated page (post-login)
+_AUTHENTICATED_URL = re.compile(r"claude\.ai/(new|chats|chat/|project/)")
+
+# URL pattern indicating login page (session expired)
+_LOGIN_URL = re.compile(r"claude\.ai/login")
+
+_SESSION_FILENAME = "claude_session.json"
+
+
+def _default_session_path(home: Path | None = None) -> Path:
+    """Return default session file path: ACL_HOME/.acl/claude_session.json."""
+    home_path = home or resolve_home()
+    return home_path / ".acl" / _SESSION_FILENAME
+
 
 class ClaudeScraper:
     """Scrape chat→project mapping from claude.ai using Playwright.
 
-    Opens a visible browser window, waits for the user to log in,
-    then intercepts network responses to collect project and chat data.
+    Persists browser session to avoid repeated logins:
+    - First run: opens visible browser, waits for manual login, saves session.
+    - Subsequent runs: reuses saved session (headless). Falls back to
+      manual login if the session has expired.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, home: Path | None = None) -> None:
         self._org_id: str = ""
         self._projects: list[ScrapedProject] = []
         self._mapping: dict[str, str] = {}
+        self._session_path = _default_session_path(home)
 
     @property
     def name(self) -> str:
@@ -49,8 +67,16 @@ class ClaudeScraper:
             requires_browser=True,
         )
 
+    @property
+    def session_path(self) -> Path:
+        """Path to the persisted session file."""
+        return self._session_path
+
     def scrape(self, output: Path | None = None) -> dict[str, str]:
-        """Launch browser, wait for login, scrape mapping.
+        """Launch browser, authenticate, scrape mapping.
+
+        Uses saved session if available. Falls back to manual login
+        if the session is missing or expired.
 
         Args:
             output: Optional path to save mapping.json.
@@ -67,32 +93,97 @@ class ClaudeScraper:
             ) from err
 
         with sync_playwright() as pw:
-            browser = pw.chromium.launch(headless=False)
+            page = self._launch_authenticated(pw)
             try:
-                page = browser.new_page()
-                self._wait_for_login(page)
                 self._discover_org_id(page)
                 self._fetch_projects(page)
                 self._fetch_all_chats(page)
             finally:
-                browser.close()
+                page.context.browser.close()
 
         if output:
             self._save_mapping(output)
 
         return dict(self._mapping)
 
-    def _wait_for_login(self, page) -> None:
-        """Navigate to claude.ai and wait for user to log in."""
+    def _launch_authenticated(self, pw) -> "Page":
+        """Launch browser with session persistence.
+
+        1. If session file exists → try headless with saved state.
+           If session expired → delete file, fall back to manual login.
+        2. If no session file → launch headed, wait for manual login,
+           save session.
+        """
+        if self._session_path.exists():
+            page = self._try_saved_session(pw)
+            if page is not None:
+                return page
+            # Session expired — file already deleted, fall through
+
+        return self._manual_login(pw)
+
+    def _try_saved_session(self, pw) -> "Page | None":
+        """Attempt to reuse a saved session. Returns page or None."""
+        log.info("Trying saved session from %s", self._session_path)
+
+        browser = pw.chromium.launch(headless=True)
+        context = browser.new_context(
+            storage_state=str(self._session_path),
+        )
+        page = context.new_page()
+
         page.goto("https://claude.ai")
+
+        # Give the page a moment to redirect
+        try:
+            page.wait_for_url(
+                _AUTHENTICATED_URL,
+                timeout=15_000,
+            )
+        except Exception:
+            # Not on an authenticated page — check if on login page
+            pass
+
+        current_url = page.url
+
+        if _AUTHENTICATED_URL.search(current_url):
+            log.info("Using saved session.")
+            return page
+
+        # Session expired
+        log.info("Saved session expired, deleting %s", self._session_path)
+        browser.close()
+        self._session_path.unlink(missing_ok=True)
+        return None
+
+    def _manual_login(self, pw) -> "Page":
+        """Launch headed browser, wait for user to log in, save session."""
+        log.info("Launching browser for manual login...")
+
+        browser = pw.chromium.launch(headless=False)
+        context = browser.new_context()
+        page = context.new_page()
+
+        page.goto("https://claude.ai/login")
         log.info("Waiting for user to log in at claude.ai...")
+
         # Wait for the user to reach an authenticated page
-        # After login, URL will contain /new, /chats, /chat/, or /project/
         page.wait_for_url(
-            re.compile(r"claude\.ai/(new|chats|chat/|project/)"),
-            timeout=300_000,  # 5 minutes to log in
+            _AUTHENTICATED_URL,
+            timeout=600_000,  # 10 minutes to log in
         )
         log.info("Login detected.")
+
+        # Save session for future runs
+        self._save_session(context)
+
+        return page
+
+    def _save_session(self, context) -> None:
+        """Persist browser session state to disk."""
+        self._session_path.parent.mkdir(parents=True, exist_ok=True)
+        context.storage_state(path=str(self._session_path))
+        log.info("Session saved to %s", self._session_path)
 
     def _discover_org_id(self, page) -> None:
         """Discover organization ID from API calls."""
