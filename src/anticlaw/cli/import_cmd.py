@@ -136,7 +136,10 @@ def import_claude(
     click.echo(f"  Imported: {imported}")
     if skipped:
         click.echo(f"  Skipped (already exist): {skipped}")
-    mapped_count = sum(1 for cd in chat_data_list if project_map.get(cd.remote_id) or cd.project_name)
+    mapped_count = sum(
+        1 for cd in chat_data_list
+        if project_map.get(cd.remote_id) or cd.project_name
+    )
     if mapped_count:
         click.echo(f"  Mapped to projects: {mapped_count}")
         click.echo(f"  Sent to _inbox: {len(chat_data_list) - mapped_count}")

@@ -148,7 +148,10 @@ class ChatStorage:
     def write_chat(self, path: Path, chat: Chat) -> None:
         """Write a Chat dataclass to a .md file with YAML frontmatter."""
         # Extract enum .value if present, otherwise use as-is
-        importance_val = chat.importance.value if hasattr(chat.importance, "value") else chat.importance
+        importance_val = (
+            chat.importance.value if hasattr(chat.importance, "value")
+            else chat.importance
+        )
         status_val = chat.status.value if hasattr(chat.status, "value") else chat.status
 
         meta = {

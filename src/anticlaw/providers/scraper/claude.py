@@ -10,10 +10,14 @@ import json
 import logging
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from anticlaw.core.fileutil import safe_filename
 
 from .base import ScrapedMapping, ScraperInfo
+
+if TYPE_CHECKING:
+    import httpx
 
 log = logging.getLogger(__name__)
 
@@ -43,15 +47,15 @@ class ClaudeScraper:
             capabilities={"projects", "chat_mapping", "instructions"},
         )
 
-    def _make_client(self) -> "httpx.Client":
+    def _make_client(self) -> httpx.Client:
         """Create an httpx client with session cookie auth."""
         try:
             import httpx
-        except ImportError:
+        except ImportError as exc:
             raise ImportError(
                 "httpx is required for the Claude scraper. "
                 "Install it with: pip install anticlaw[scraper]"
-            )
+            ) from exc
         return httpx.Client(
             base_url=BASE_URL,
             cookies={"sessionKey": self._session_key},
@@ -60,7 +64,7 @@ class ClaudeScraper:
             follow_redirects=True,
         )
 
-    def _get_org_id(self, client: "httpx.Client") -> str:
+    def _get_org_id(self, client: httpx.Client) -> str:
         """GET /api/auth/current_user → extract org_id."""
         resp = client.get("/api/auth/current_user")
         resp.raise_for_status()
@@ -80,7 +84,7 @@ class ClaudeScraper:
         log.info("Found org_id: %s", org_id)
         return org_id
 
-    def _get_projects(self, client: "httpx.Client") -> list[dict]:
+    def _get_projects(self, client: httpx.Client) -> list[dict]:
         """GET /api/organizations/{org_id}/projects → list of projects.
 
         Skips starter projects (is_starter_project=true).
@@ -97,7 +101,7 @@ class ClaudeScraper:
         log.info("Found %d projects (excluding starter projects)", len(result))
         return result
 
-    def _get_project_chats(self, client: "httpx.Client", project_uuid: str) -> list[dict]:
+    def _get_project_chats(self, client: httpx.Client, project_uuid: str) -> list[dict]:
         """GET /api/organizations/{org_id}/chat_conversations?project_uuid=...
 
         Handles pagination via next_page_token.

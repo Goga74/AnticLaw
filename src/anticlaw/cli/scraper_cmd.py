@@ -68,9 +68,9 @@ def scrape_claude(session_key: str, output: Path, home: Path | None) -> None:
     try:
         mapping = scraper.scrape(output)
     except ImportError as e:
-        raise click.ClickException(str(e))
+        raise click.ClickException(str(e)) from e
     except Exception as e:
-        raise click.ClickException(f"Scrape failed: {e}")
+        raise click.ClickException(f"Scrape failed: {e}") from e
 
     click.echo(f"Found {len(mapping.projects)} projects:")
     for proj_info in mapping.projects.values():
