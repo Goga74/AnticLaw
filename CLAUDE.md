@@ -64,8 +64,8 @@ src/anticlaw/
 │   │   ├── base.py          # ✅ SourceProvider Protocol + SourceInfo
 │   │   └── local_files.py   # ✅ LocalFilesProvider (recursive walk, SHA-256, PDF)
 │   └── scraper/
-│       ├── base.py          # ScraperProvider Protocol + ScraperInfo
-│       ├── claude.py        # Claude.ai project/knowledge scraper
+│       ├── base.py          # ✅ ScraperProvider Protocol + ScraperInfo + ScrapedMapping
+│       ├── claude.py        # ✅ ClaudeScraper (httpx, session cookie auth, chat→project mapping)
 │       ├── chatgpt.py       # ChatGPT structure scraper
 │       ├── gemini.py        # Gemini data scraper
 │       └── perplexity.py    # Perplexity thread scraper
@@ -107,6 +107,7 @@ src/anticlaw/
     ├── api_cmd.py            # ✅ aw api start [--port] [--host]
     ├── listen_cmd.py         # ✅ aw listen [--continuous] [--mode ask] (voice input)
     ├── clear_cmd.py          # ✅ aw clear [--all] (delete _inbox/_archive contents)
+    ├── scraper_cmd.py        # ✅ aw scrape claude --session-key <KEY> [-o mapping.json]
     ├── provider_cmd.py       # aw providers ...
     ├── sync_cmd.py           # ✅ aw send <chat-id>, aw chat <project> (bidirectional sync)
     ├── daemon_cmd.py         # ✅ aw daemon start/stop/status/install/uninstall/logs
@@ -182,6 +183,8 @@ aw listen --mode ask             # Voice question → LLM answer
 aw listen --model small          # Use larger Whisper model
 aw clear                         # Delete all files in _inbox/ (with confirmation)
 aw clear --all                   # Delete _inbox/ + _archive/ + rebuild index
+aw scrape claude --session-key KEY  # Scrape chat→project mapping from claude.ai
+aw scrape claude --session-key KEY -o map.json  # Custom output path
 ```
 
 ## File Format: Chat (.md)
@@ -213,7 +216,7 @@ There are three main approaches...
 
 ## Current Phase
 
-Phase 16 complete. Next: Phase 17 (Playwright scraper for chat→project mapping).
+Phase 17 complete. Next: Phase 18 (Alexa integration).
 
 ### Completed
 - **Phase 0:** Scaffolding — pyproject.toml, directory structure, `aw --version` ✅
@@ -233,9 +236,10 @@ Phase 16 complete. Next: Phase 17 (Playwright scraper for chat→project mapping
 - **Phase 14:** Bidirectional LLM sync — SyncProvider Protocol + 4 adapters (ClaudeAPI, OpenAIAPI, GeminiAPI, OllamaLocal) with httpx, SyncEngine (3-level push target hierarchy: frontmatter → _project.yaml → config.yaml, send_chat with response writeback, find/process drafts), daemon draft detection (auto_push_drafts config), CLI: `aw send <chat-id> [--provider]`, `aw chat <project> [--provider]` (interactive file-based chat), API key warnings (cloud requires separate paid keys), keyring integration, deps: `sync` extra (httpx) ✅
 - **Phase 15:** Gemini provider — GeminiProvider (parse Google Takeout ZIP or extracted directory, per-conversation-folder structure with conversation.json, multi-format support: text/content/parts/chunkedPrompt, ISO+Unix timestamps, user/model→human/assistant role normalization, title from JSON or folder name, model extraction from conversation or message metadata), reuses scrub_text from Claude provider, CLI: `aw import gemini <takeout.zip-or-dir> [--scrub] [--home PATH]`, cross-provider search (results from Claude + ChatGPT + Gemini) ✅
 - **Phase 16:** Voice input via Whisper — InputProvider Protocol + InputInfo (fifth provider family), WhisperInputProvider (faster-whisper CTranslate2 backend, models: tiny/base/small/medium, sounddevice recording, silence detection with auto-stop, push-to-talk mode, Russian + English auto-detect via Whisper), CLI: `aw listen` (single query → search → results), `aw listen --continuous` (loop mode), `aw listen --mode ask` (voice Q&A via Ollama), `--model`/`--language`/`--push-to-talk` overrides, graceful fallback when faster-whisper/sounddevice not installed, config: `voice` section (model, language, push_to_talk, silence_threshold, max_duration), deps: `voice` extra (faster-whisper, sounddevice, numpy) ✅
+- **Phase 17:** HTTP scraper for chat→project mapping — ScraperProvider Protocol + ScraperInfo + ScrapedMapping (sixth provider family), ClaudeScraper (httpx direct API calls, session cookie auth, org detection, project listing with starter filtering, paginated chat fetching, instructions extraction), mapping.json output format (`{chats, projects, scraped_at}`), load_project_mapping supports both new and legacy formats, CLI: `aw scrape claude --session-key <KEY> [-o mapping.json]` (with session key instructions), docs/SCRAPER.md, deps: `scraper` extra (httpx, no Playwright needed) ✅
 
 ### Test coverage
-937 unit tests passing (models, fileutil, storage, config, registry, claude provider, chatgpt provider, gemini provider, import CLI (claude + chatgpt + gemini), cross-provider import (3-provider), init CLI, meta_db, search, search CLI, project CLI, context store, hooks, MCP tools, MCP CLI, embedding provider, vector index, advanced search tiers, fallback behavior, entities, graph, graph CLI, ollama client, summarizer, tagger, Q&A, LLM CLI, backup base, backup local, backup gdrive, watcher, watcher draft detection, scheduler, IPC, service, daemon CLI, backup CLI, cron CLI, retention, antientropy, knowledge CLI, source models, local files provider, meta_db source files, search unified, scan CLI, API server, UI routes, sync providers, sync engine, sync CLI, input base, whisper input, listen CLI, clear CLI).
+967 unit tests passing (models, fileutil, storage, config, registry, claude provider, chatgpt provider, gemini provider, import CLI (claude + chatgpt + gemini), cross-provider import (3-provider), init CLI, meta_db, search, search CLI, project CLI, context store, hooks, MCP tools, MCP CLI, embedding provider, vector index, advanced search tiers, fallback behavior, entities, graph, graph CLI, ollama client, summarizer, tagger, Q&A, LLM CLI, backup base, backup local, backup gdrive, watcher, watcher draft detection, scheduler, IPC, service, daemon CLI, backup CLI, cron CLI, retention, antientropy, knowledge CLI, source models, local files provider, meta_db source files, search unified, scan CLI, API server, UI routes, sync providers, sync engine, sync CLI, input base, whisper input, listen CLI, clear CLI, scraper base, scraper claude, scraper CLI).
 
 ## Specs
 
@@ -255,14 +259,14 @@ Read these files BEFORE implementing any phase. They contain exact data models, 
 6. **Tests for every module.** Write tests alongside code, not after. Minimum: happy path + error case.
 7. **After completing a task**, update this file's "Current Phase" section if the phase changed.
 
-## Planned Features (post-Phase 14)
+## Planned Features (post-Phase 17)
 
 Key upcoming features documented in PLAN.md and SPEC.md:
 - **Phase 15:** ~~Gemini provider — Google Takeout import (`aw import gemini`)~~ (done)
 - **Phase 16:** ~~Voice input via Whisper (`aw listen`)~~ (done)
-- **Phase 17:** Playwright scraper — browser-based chat→project mapping (`aw scrape claude`)
+- **Phase 17:** ~~HTTP scraper — chat→project mapping (`aw scrape claude`)~~ (done)
 - **Phase 18:** Alexa integration
-- **Scraper providers:** Browser-based data collection (Playwright): claude-web, chatgpt-web, gemini-web, perplexity-web
+- **Scraper providers:** Additional scrapers (chatgpt, gemini, perplexity) via httpx
 - **6 provider families:** LLM, Backup, Embedding, Source, Input, Scraper
 
 ## Environment Rules
