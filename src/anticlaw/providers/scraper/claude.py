@@ -1,9 +1,9 @@
 """Claude.ai Playwright scraper — automated response interception via CDP.
 
-Connects to an already-running Chrome instance via CDP, fetches the project
-list via page.evaluate(fetch()), navigates to each project page to trigger
-conversations_v2 API responses, and builds a chat→project mapping from the
-intercepted data.
+Connects to an already-running Chrome instance via CDP, registers a response
+interceptor, navigates to claude.ai to discover org_id and project list from
+intercepted API responses, then navigates to each project page to capture
+conversations_v2 responses and build a chat→project mapping.
 """
 
 from __future__ import annotations
@@ -23,6 +23,7 @@ log = logging.getLogger(__name__)
 BASE_URL = "https://claude.ai"
 
 # Regex patterns for intercepted API URLs
+_RE_ORG_ID = re.compile(r"/api/organizations/([a-f0-9-]{36})/")
 _RE_PROJECTS = re.compile(r"/api/organizations/[^/]+/projects")
 _RE_CONVERSATIONS = re.compile(
     r"/projects/([^/]+)/conversations_v2"
@@ -34,6 +35,7 @@ class ClaudeScraper:
 
     def __init__(self, cdp_url: str = "http://localhost:9222") -> None:
         self._cdp_url = cdp_url
+        self._org_id: str | None = None
         self._projects: dict[str, dict] = {}  # {uuid: {name, instructions, is_starter}}
         self._chat_to_project: dict[str, str] = {}  # {chat_uuid: project_uuid}
 
@@ -50,19 +52,33 @@ class ClaudeScraper:
         )
 
     def _handle_response(self, response: object) -> None:
-        """Response interceptor — captures project and conversation API data."""
+        """Response interceptor — captures org_id, projects, and conversations."""
         url = response.url  # type: ignore[attr-defined]
+
+        # Debug: log all conversation-related URLs
+        if "conversation" in url.lower():
+            print(f"DEBUG captured: {url}")
+
+        # Try to discover org_id from any API URL
+        if not self._org_id:
+            m = _RE_ORG_ID.search(url)
+            if m:
+                self._org_id = m.group(1)
+                log.info("Discovered org_id: %s", self._org_id)
+
+        # Match conversation responses FIRST — conversations_v2 URLs
+        # also match _RE_PROJECTS (both contain "/projects/") so we
+        # must check the more specific pattern before the general one.
+        m = _RE_CONVERSATIONS.search(url)
+        if m:
+            project_uuid = m.group(1)
+            self._handle_conversations_response(response, project_uuid)
+            return
 
         # Match project list responses
         if _RE_PROJECTS.search(url):
             self._handle_projects_response(response)
             return
-
-        # Match conversation list responses
-        m = _RE_CONVERSATIONS.search(url)
-        if m:
-            project_uuid = m.group(1)
-            self._handle_conversations_response(response, project_uuid)
 
     def _handle_projects_response(self, response: object) -> None:
         """Extract project list from intercepted response."""
@@ -153,21 +169,6 @@ class ClaudeScraper:
             scraped_at=datetime.now(timezone.utc).isoformat(),
         )
 
-    def _extract_org_id(self, user_data: dict) -> str:
-        """Extract org UUID from /api/auth/current_user response."""
-        orgs = user_data.get("account", {}).get("memberships", [])
-        if not orgs:
-            raise ValueError(
-                "No organizations found. "
-                "Is the Chrome session logged in to claude.ai?"
-            )
-        org_id = orgs[0].get("organization", {}).get("uuid", "")
-        if not org_id:
-            raise ValueError(
-                "Could not extract organization UUID from user data."
-            )
-        return org_id
-
     def _start_playwright(self) -> object:
         """Import and start Playwright. Returns the Playwright instance."""
         try:
@@ -207,44 +208,31 @@ class ClaudeScraper:
                     break
             if page is None:
                 page = pages[0] if pages else context.new_page()
-                page.goto("https://claude.ai")
 
-            # Register response interceptor BEFORE any API calls
+            # Register response interceptor BEFORE any navigation
             page.on("response", self._handle_response)
 
-            # Step 1: Fetch org_id via browser's authenticated session
-            user_data = page.evaluate(
-                "fetch('/api/auth/current_user').then(r => r.json())"
-            )
-            org_id = self._extract_org_id(user_data)
-            log.info("Found org_id: %s", org_id)
+            # Navigate to claude.ai — triggers API requests that the
+            # interceptor captures for org_id and project list discovery
+            page.goto("https://claude.ai")
+            page.wait_for_load_state("networkidle")
 
-            # Step 2: Fetch project list via browser fetch
-            projects_data = page.evaluate(
-                "(orgId) => fetch("
-                "`/api/organizations/${orgId}/projects"
-                "?include_harmony_projects=true&limit=50`"
-                ").then(r => r.json())",
-                org_id,
-            )
+            # Verify org_id was discovered from intercepted URLs
+            if not self._org_id:
+                raise RuntimeError(
+                    "Could not discover org ID from intercepted "
+                    "responses. Is the Chrome session logged in to "
+                    "claude.ai?"
+                )
 
-            # Process projects data directly
-            if isinstance(projects_data, list):
-                for proj in projects_data:
-                    uuid = proj.get("uuid", "")
-                    if not uuid:
-                        continue
-                    self._projects[uuid] = {
-                        "name": proj.get("name", "Untitled"),
-                        "instructions": (
-                            proj.get("prompt_template", "") or ""
-                        ),
-                        "is_starter": proj.get(
-                            "is_starter_project", False
-                        ),
-                    }
+            # Projects should have been captured by the interceptor
+            if not self._projects:
+                raise RuntimeError(
+                    "No projects found in intercepted responses."
+                )
 
-            # Step 3: Navigate to each non-starter project
+            # Navigate to each non-starter project to trigger
+            # conversations_v2 responses
             real_projects = [
                 (uuid, info)
                 for uuid, info in self._projects.items()
@@ -257,7 +245,18 @@ class ClaudeScraper:
                     f"Loading project {i}/{total}: {info['name']}..."
                 )
                 page.goto(f"https://claude.ai/project/{proj_uuid}")
-                page.wait_for_timeout(2000)
+                try:
+                    page.wait_for_response(
+                        lambda r, pid=proj_uuid: (
+                            f"projects/{pid}" in r.url
+                        ),
+                        timeout=10000,
+                    )
+                except Exception:
+                    print(
+                        f"  Warning: no conversations response "
+                        f"for {info['name']}"
+                    )
 
             # Build mapping from intercepted conversation responses
             mapping = self._build_mapping()
