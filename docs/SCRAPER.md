@@ -1,39 +1,45 @@
-# Scraper: HTTP API Approach
+# Scraper: Playwright Response Interception
 
 ## Overview
 
-Phase 17 implements chat→project mapping by calling Claude.ai's internal HTTP API
-directly with `httpx`, instead of automating a browser with Playwright.
+Phase 17 implements chat→project mapping by connecting to an already-running
+Chrome instance via CDP (Chrome DevTools Protocol) and intercepting API
+responses as the user browses their Claude.ai projects.
 
-**Advantages over Playwright:**
-- No ~50 MB browser binary download
-- Faster execution (seconds vs minutes)
-- No headed/headless browser management
-- Reuses `httpx` already required by `sync` and `semantic` extras
+**How it works:**
+1. Chrome runs with `--remote-debugging-port=9222`
+2. Playwright connects via CDP — reuses the existing session (no login needed)
+3. A response interceptor captures project and conversation API responses
+4. The user clicks through their projects in Claude
+5. When done, the mapping is built from captured data and saved
 
-## Authentication
+## Prerequisites
 
-The scraper authenticates using a session cookie from your browser.
+Start Chrome with remote debugging enabled:
 
-### How to get your session key
+```bash
+# Windows
+chrome.exe --remote-debugging-port=9222
 
-1. Open [claude.ai](https://claude.ai) in your browser and log in
-2. Open DevTools (`F12`)
-3. Go to **Application** tab → **Cookies** → `claude.ai`
-4. Find the cookie named `sessionKey`
-5. Copy its value (starts with `sk-ant-sid01-...`)
+# macOS
+/Applications/Google\ Chrome.app/Contents/MacOS/Google\ Chrome --remote-debugging-port=9222
 
-## API Endpoints Used
+# Linux
+google-chrome --remote-debugging-port=9222
+```
 
-All requests go to `https://claude.ai` with the `sessionKey` cookie.
+Then log in to [claude.ai](https://claude.ai) in that Chrome instance.
 
-| # | Method | Endpoint | Purpose |
-|---|--------|----------|---------|
-| 1 | GET | `/api/auth/current_user` | Get organization UUID |
-| 2 | GET | `/api/organizations/{org_id}/projects` | List all projects |
-| 3 | GET | `/api/organizations/{org_id}/chat_conversations?project_uuid={id}&limit=100` | List chats in a project |
+## API Responses Intercepted
 
-Pagination: endpoint #3 may return `next_page_token` for projects with 100+ chats.
+The scraper captures responses matching these URL patterns:
+
+| Pattern | Purpose |
+|---------|---------|
+| `/api/organizations/*/projects*` | Project list (uuid, name, is_starter_project) |
+| `/projects/*/conversations_v2*` | Chat list per project (uuid extracted from URL + response body) |
+
+Starter projects (`is_starter_project: true`) are automatically excluded.
 
 ## Output Format
 
@@ -62,11 +68,14 @@ The scraper produces a `mapping.json` file:
 ## CLI Usage
 
 ```bash
-# Scrape and save mapping
-aw scrape claude --session-key "sk-ant-sid01-..."
+# Start Chrome with debugging, then:
+aw scrape claude
+
+# Custom CDP URL
+aw scrape claude --cdp-url http://localhost:9333
 
 # Custom output path
-aw scrape claude --session-key "sk-ant-sid01-..." -o my-mapping.json
+aw scrape claude -o my-mapping.json
 
 # Then use mapping during import
 aw import claude export.zip --mapping mapping.json
@@ -77,23 +86,21 @@ aw import claude export.zip --mapping mapping.json
 The `aw import claude` command accepts `--mapping` to route chats to correct
 project folders. The mapping file is compatible with both:
 
-- **New format** (from HTTP scraper): `{"chats": {...}, "projects": {...}}`
+- **New format** (from Playwright scraper): `{"chats": {...}, "projects": {...}}`
 - **Legacy format**: `{"chat-uuid": "project-name", ...}` (flat dict)
 
 ## Dependencies
 
-Requires `httpx` (included in `scraper` extra):
+Requires `playwright` (included in `scraper` extra):
 
 ```bash
 pip install anticlaw[scraper]
+playwright install chromium
 ```
-
-Since `httpx` is also used by `sync` and `semantic` extras, it may already
-be installed.
 
 ## Security Notes
 
-- The session key is passed via CLI option (not stored)
-- All requests are read-only (GET only)
+- No credentials are passed — the scraper reuses your existing Chrome session
+- All interception is read-only (response capture only)
 - No data is modified on Claude.ai
-- Session keys expire; get a fresh one if you get auth errors
+- Chrome must be started with `--remote-debugging-port` by the user

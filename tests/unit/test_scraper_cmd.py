@@ -1,4 +1,4 @@
-"""Tests for anticlaw.cli.scraper_cmd (aw scrape)."""
+"""Tests for anticlaw.cli.scraper_cmd (aw scrape — Playwright CDP)."""
 
 from __future__ import annotations
 
@@ -22,21 +22,14 @@ class TestScrapeGroup:
 
 
 class TestScrapeClaudeCmd:
-    def test_help_shows_instructions(self):
+    def test_help_shows_cdp_instructions(self):
         runner = CliRunner()
         result = runner.invoke(cli, ["scrape", "claude", "--help"])
 
         assert result.exit_code == 0
-        assert "session-key" in result.output
-        assert "DevTools" in result.output
-        assert "sessionKey" in result.output
-
-    def test_requires_session_key(self):
-        runner = CliRunner()
-        result = runner.invoke(cli, ["scrape", "claude"])
-
-        assert result.exit_code != 0
-        assert "session-key" in result.output
+        assert "cdp-url" in result.output
+        assert "remote-debugging-port" in result.output
+        assert "chrome" in result.output.lower() or "Chrome" in result.output
 
     def test_successful_scrape(self, tmp_path: Path):
         output = tmp_path / "mapping.json"
@@ -55,15 +48,15 @@ class TestScrapeClaudeCmd:
 
         with patch(
             "anticlaw.providers.scraper.claude.ClaudeScraper"
-        ) as MockScraper:
+        ) as mock_scraper_cls:
             instance = MagicMock()
             instance.scrape.return_value = mapping
-            MockScraper.return_value = instance
+            mock_scraper_cls.return_value = instance
 
             runner = CliRunner()
             result = runner.invoke(
                 cli,
-                ["scrape", "claude", "--session-key", "test-key", "-o", str(output)],
+                ["scrape", "claude", "-o", str(output)],
             )
 
         assert result.exit_code == 0
@@ -73,60 +66,84 @@ class TestScrapeClaudeCmd:
         assert "Other Project" in result.output
         assert "(has instructions)" in result.output
         assert str(output) in result.output
-        MockScraper.assert_called_once_with(session_key="test-key")
+        mock_scraper_cls.assert_called_once_with(cdp_url="http://localhost:9222")
+
+    def test_custom_cdp_url(self, tmp_path: Path):
+        output = tmp_path / "mapping.json"
+        mapping = ScrapedMapping(chats={}, projects={}, scraped_at="2026-01-01T00:00:00Z")
+
+        with patch(
+            "anticlaw.providers.scraper.claude.ClaudeScraper"
+        ) as mock_scraper_cls:
+            instance = MagicMock()
+            instance.scrape.return_value = mapping
+            mock_scraper_cls.return_value = instance
+
+            runner = CliRunner()
+            result = runner.invoke(
+                cli,
+                [
+                    "scrape", "claude",
+                    "--cdp-url", "http://localhost:9333",
+                    "-o", str(output),
+                ],
+            )
+
+        assert result.exit_code == 0
+        mock_scraper_cls.assert_called_once_with(cdp_url="http://localhost:9333")
 
     def test_import_error_shows_install_hint(self, tmp_path: Path):
         output = tmp_path / "mapping.json"
 
         with patch(
             "anticlaw.providers.scraper.claude.ClaudeScraper"
-        ) as MockScraper:
+        ) as mock_scraper_cls:
             instance = MagicMock()
-            instance.scrape.side_effect = ImportError("httpx is required")
-            MockScraper.return_value = instance
+            instance.scrape.side_effect = ImportError("playwright is required")
+            mock_scraper_cls.return_value = instance
 
             runner = CliRunner()
             result = runner.invoke(
                 cli,
-                ["scrape", "claude", "--session-key", "test-key", "-o", str(output)],
+                ["scrape", "claude", "-o", str(output)],
             )
 
         assert result.exit_code != 0
-        assert "httpx is required" in result.output
+        assert "playwright is required" in result.output
 
     def test_scrape_error_shows_message(self, tmp_path: Path):
         output = tmp_path / "mapping.json"
 
         with patch(
             "anticlaw.providers.scraper.claude.ClaudeScraper"
-        ) as MockScraper:
+        ) as mock_scraper_cls:
             instance = MagicMock()
-            instance.scrape.side_effect = ValueError("No organizations found")
-            MockScraper.return_value = instance
+            instance.scrape.side_effect = RuntimeError("No browser contexts found")
+            mock_scraper_cls.return_value = instance
 
             runner = CliRunner()
             result = runner.invoke(
                 cli,
-                ["scrape", "claude", "--session-key", "test-key", "-o", str(output)],
+                ["scrape", "claude", "-o", str(output)],
             )
 
         assert result.exit_code != 0
-        assert "No organizations found" in result.output
+        assert "No browser contexts found" in result.output
 
     def test_default_output_is_mapping_json(self):
         mapping = ScrapedMapping(chats={}, projects={}, scraped_at="2026-01-01T00:00:00Z")
 
         with patch(
             "anticlaw.providers.scraper.claude.ClaudeScraper"
-        ) as MockScraper:
+        ) as mock_scraper_cls:
             instance = MagicMock()
             instance.scrape.return_value = mapping
-            MockScraper.return_value = instance
+            mock_scraper_cls.return_value = instance
 
             runner = CliRunner()
-            result = runner.invoke(
+            runner.invoke(
                 cli,
-                ["scrape", "claude", "--session-key", "test-key"],
+                ["scrape", "claude"],
             )
 
         # The scrape() call should use mapping.json as default
@@ -139,17 +156,37 @@ class TestScrapeClaudeCmd:
 
         with patch(
             "anticlaw.providers.scraper.claude.ClaudeScraper"
-        ) as MockScraper:
+        ) as mock_scraper_cls:
             instance = MagicMock()
             instance.scrape.return_value = mapping
-            MockScraper.return_value = instance
+            mock_scraper_cls.return_value = instance
 
             runner = CliRunner()
             result = runner.invoke(
                 cli,
-                ["scrape", "claude", "--session-key", "test-key", "-o", str(output)],
+                ["scrape", "claude", "-o", str(output)],
             )
 
         assert result.exit_code == 0
         assert "aw import claude" in result.output
         assert "--mapping" in result.output
+
+    def test_shows_connecting_message(self, tmp_path: Path):
+        output = tmp_path / "mapping.json"
+        mapping = ScrapedMapping(chats={}, projects={}, scraped_at="2026-01-01T00:00:00Z")
+
+        with patch(
+            "anticlaw.providers.scraper.claude.ClaudeScraper"
+        ) as mock_scraper_cls:
+            instance = MagicMock()
+            instance.scrape.return_value = mapping
+            mock_scraper_cls.return_value = instance
+
+            runner = CliRunner()
+            result = runner.invoke(
+                cli,
+                ["scrape", "claude", "-o", str(output)],
+            )
+
+        assert result.exit_code == 0
+        assert "Connecting to Chrome" in result.output
