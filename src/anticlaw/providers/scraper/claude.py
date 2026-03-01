@@ -2,7 +2,7 @@
 
 Connects to Chrome via CDP, navigates to claude.ai, discovers org_id
 from intercepted API responses, then uses page.evaluate() with
-cursor-based pagination to fetch ALL chats (starred + unstarred).
+offset-based pagination to fetch ALL chats (starred + unstarred).
 Each chat object contains a project field with uuid and name, so a
 single session captures the full chat→project mapping.
 """
@@ -25,35 +25,26 @@ BASE_URL = "https://claude.ai"
 
 _RE_ORG_ID = re.compile(r"/api/organizations/([a-f0-9-]{36})/")
 
-# JavaScript for cursor-based pagination of chat_conversations.
+# JavaScript for offset-based pagination of chat_conversations.
 # Accepts [orgId, starred] array. Returns all chats across pages.
 _JS_FETCH_CHATS = """
 async (args) => {
     const [orgId, starred] = args;
     const chats = [];
-    const starredParam = starred ? "true" : "false";
-    let url = `/api/organizations/${orgId}/chat_conversations`
-        + `?limit=50&starred=${starredParam}`
-        + `&consistency=eventual`;
-    while (url) {
+    let offset = 0;
+    const limit = 50;
+    while (true) {
+        const url = `/api/organizations/${orgId}`
+            + `/chat_conversations`
+            + `?limit=${limit}&offset=${offset}`
+            + `&starred=${starred}`
+            + `&consistency=eventual`;
         const r = await fetch(url);
         const data = await r.json();
-        const items = Array.isArray(data)
-            ? data
-            : (data.conversations || data.chats
-               || data.data || []);
-        chats.push(...items);
-        const cursor = data.next_page_token
-            || data.cursor
-            || data.next_cursor
-            || null;
-        url = cursor
-            ? `/api/organizations/${orgId}`
-              + `/chat_conversations`
-              + `?limit=50&starred=${starredParam}`
-              + `&consistency=eventual&cursor=${cursor}`
-            : null;
-        if (items.length < 50) break;
+        if (!Array.isArray(data) || data.length === 0) break;
+        chats.push(...data);
+        if (data.length < limit) break;
+        offset += limit;
     }
     return chats;
 }
@@ -219,7 +210,7 @@ class ClaudeScraper:
                     "Is Chrome logged in to claude.ai?"
                 )
 
-            # Fetch ALL chats with cursor-based pagination
+            # Fetch ALL chats with offset-based pagination
             self._fetch_all_chats(page)
 
             if not self._chats:
