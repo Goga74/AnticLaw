@@ -1,8 +1,9 @@
-"""Claude.ai Playwright scraper — response interception via CDP.
+"""Claude.ai Playwright scraper — automated response interception via CDP.
 
-Connects to an already-running Chrome instance via CDP, intercepts
-API responses as the user browses claude.ai projects, and builds
-a chat→project mapping from the captured data.
+Connects to an already-running Chrome instance via CDP, fetches the project
+list via page.evaluate(fetch()), navigates to each project page to trigger
+conversations_v2 API responses, and builds a chat→project mapping from the
+intercepted data.
 """
 
 from __future__ import annotations
@@ -152,6 +153,21 @@ class ClaudeScraper:
             scraped_at=datetime.now(timezone.utc).isoformat(),
         )
 
+    def _extract_org_id(self, user_data: dict) -> str:
+        """Extract org UUID from /api/auth/current_user response."""
+        orgs = user_data.get("account", {}).get("memberships", [])
+        if not orgs:
+            raise ValueError(
+                "No organizations found. "
+                "Is the Chrome session logged in to claude.ai?"
+            )
+        org_id = orgs[0].get("organization", {}).get("uuid", "")
+        if not org_id:
+            raise ValueError(
+                "Could not extract organization UUID from user data."
+            )
+        return org_id
+
     def _start_playwright(self) -> object:
         """Import and start Playwright. Returns the Playwright instance."""
         try:
@@ -159,15 +175,16 @@ class ClaudeScraper:
         except ImportError as exc:
             raise ImportError(
                 "playwright is required for the Claude scraper. "
-                "Install it with: pip install anticlaw[scraper] && playwright install chromium"
+                "Install it with: pip install anticlaw[scraper] "
+                "&& playwright install chromium"
             ) from exc
         return sync_playwright().start()
 
     def scrape(self, output: Path) -> ScrapedMapping:
-        """Connect to Chrome via CDP, intercept responses, and save mapping.
+        """Connect to Chrome, auto-navigate projects, save mapping.
 
-        Requires Chrome to be running with --remote-debugging-port=9222.
-        The user must browse their Claude.ai projects manually.
+        Requires Chrome to be running with --remote-debugging-port=9222
+        and logged in to claude.ai.
         """
         pw = self._start_playwright()
         try:
@@ -192,17 +209,57 @@ class ClaudeScraper:
                 page = pages[0] if pages else context.new_page()
                 page.goto("https://claude.ai")
 
-            # Register response interceptor
+            # Register response interceptor BEFORE any API calls
             page.on("response", self._handle_response)
 
-            print(
-                "\nBrowse your projects in Claude. "
-                "Click each project to load its chats.\n"
-                "Press Enter when done."
+            # Step 1: Fetch org_id via browser's authenticated session
+            user_data = page.evaluate(
+                "fetch('/api/auth/current_user').then(r => r.json())"
             )
-            input()
+            org_id = self._extract_org_id(user_data)
+            log.info("Found org_id: %s", org_id)
 
-            # Build mapping from captured data
+            # Step 2: Fetch project list via browser fetch
+            projects_data = page.evaluate(
+                "(orgId) => fetch("
+                "`/api/organizations/${orgId}/projects"
+                "?include_harmony_projects=true&limit=50`"
+                ").then(r => r.json())",
+                org_id,
+            )
+
+            # Process projects data directly
+            if isinstance(projects_data, list):
+                for proj in projects_data:
+                    uuid = proj.get("uuid", "")
+                    if not uuid:
+                        continue
+                    self._projects[uuid] = {
+                        "name": proj.get("name", "Untitled"),
+                        "instructions": (
+                            proj.get("prompt_template", "") or ""
+                        ),
+                        "is_starter": proj.get(
+                            "is_starter_project", False
+                        ),
+                    }
+
+            # Step 3: Navigate to each non-starter project
+            real_projects = [
+                (uuid, info)
+                for uuid, info in self._projects.items()
+                if not info.get("is_starter", False)
+            ]
+
+            total = len(real_projects)
+            for i, (proj_uuid, info) in enumerate(real_projects, 1):
+                print(
+                    f"Loading project {i}/{total}: {info['name']}..."
+                )
+                page.goto(f"https://claude.ai/project/{proj_uuid}")
+                page.wait_for_timeout(2000)
+
+            # Build mapping from intercepted conversation responses
             mapping = self._build_mapping()
 
             # Save to file

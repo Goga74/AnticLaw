@@ -55,9 +55,9 @@ def scrape_claude(cdp_url: str, output: Path, home: Path | None) -> None:
     \b
     How it works:
       - Connects to Chrome via CDP (no extra login needed)
-      - Intercepts API responses as you browse projects
-      - You click through your projects in Claude
-      - Press Enter when done to save the mapping
+      - Automatically fetches project list and navigates each project
+      - Collects chat→project mapping from intercepted API responses
+      - Saves the mapping when done
 
     \b
     Then use the mapping with import:
@@ -90,4 +90,6 @@ def scrape_claude(cdp_url: str, output: Path, home: Path | None) -> None:
         f"across {len(mapping.projects)} projects."
     )
     click.echo(f"Saved to: {output}")
-    click.echo(f"\nUse with import: aw import claude export.zip --mapping {output}")
+    click.echo(
+        f"\nUse with import: aw import claude export.zip --mapping {output}"
+    )

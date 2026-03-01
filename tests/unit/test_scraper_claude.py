@@ -12,6 +12,19 @@ from anticlaw.providers.scraper.claude import ClaudeScraper
 
 # --- Fixtures: mock API response data ---
 
+CURRENT_USER_DATA = {
+    "account": {
+        "memberships": [
+            {
+                "organization": {
+                    "uuid": "org-uuid-123",
+                    "name": "Personal",
+                }
+            }
+        ]
+    }
+}
+
 PROJECTS_RESPONSE = [
     {
         "uuid": "proj-uuid-aaa",
@@ -51,9 +64,12 @@ def _mock_response(url: str, data: object) -> MagicMock:
     return resp
 
 
-def _make_pw_mock(page_url: str = "https://claude.ai") -> tuple[MagicMock, MagicMock]:
-    """Create a mock Playwright instance with a browser context and page.
+def _make_pw_mock(
+    page_url: str = "https://claude.ai",
+) -> tuple[MagicMock, MagicMock]:
+    """Create a mock Playwright instance with browser context and page.
 
+    Sets up page.evaluate to return CURRENT_USER_DATA then PROJECTS_RESPONSE.
     Returns (pw_mock, page_mock).
     """
     mock_pw = MagicMock()
@@ -65,6 +81,9 @@ def _make_pw_mock(page_url: str = "https://claude.ai") -> tuple[MagicMock, Magic
     mock_context.pages = [mock_page]
     mock_browser.contexts = [mock_context]
     mock_pw.chromium.connect_over_cdp.return_value = mock_browser
+
+    # Default evaluate responses for automated flow
+    mock_page.evaluate.side_effect = [CURRENT_USER_DATA, PROJECTS_RESPONSE]
 
     return mock_pw, mock_page
 
@@ -115,7 +134,10 @@ class TestHandleProjectsResponse:
 
         scraper._handle_response(resp)
 
-        assert scraper._projects["proj-uuid-aaa"]["instructions"] == "You are a Python expert."
+        assert (
+            scraper._projects["proj-uuid-aaa"]["instructions"]
+            == "You are a Python expert."
+        )
         assert scraper._projects["proj-uuid-bbb"]["instructions"] == ""
 
     def test_skips_non_list_response(self):
@@ -133,7 +155,10 @@ class TestHandleProjectsResponse:
         scraper = ClaudeScraper()
         resp = _mock_response(
             "https://claude.ai/api/organizations/org-123/projects",
-            [{"uuid": "", "name": "No UUID"}, {"uuid": "valid", "name": "Valid"}],
+            [
+                {"uuid": "", "name": "No UUID"},
+                {"uuid": "valid", "name": "Valid"},
+            ],
         )
 
         scraper._handle_response(resp)
@@ -204,7 +229,9 @@ class TestHandleConversationsResponse:
     def test_handles_json_parse_error(self):
         scraper = ClaudeScraper()
         resp = MagicMock()
-        resp.url = "https://claude.ai/projects/proj-uuid-aaa/conversations_v2"
+        resp.url = (
+            "https://claude.ai/projects/proj-uuid-aaa/conversations_v2"
+        )
         resp.json.side_effect = Exception("invalid JSON")
 
         scraper._handle_response(resp)
@@ -214,7 +241,8 @@ class TestHandleConversationsResponse:
     def test_extracts_project_uuid_from_url(self):
         scraper = ClaudeScraper()
         resp = _mock_response(
-            "https://claude.ai/projects/my-proj-id-xyz/conversations_v2?cursor=abc",
+            "https://claude.ai/projects/my-proj-id-xyz/"
+            "conversations_v2?cursor=abc",
             [{"uuid": "chat-1"}],
         )
 
@@ -239,7 +267,8 @@ class TestHandleResponseRouting:
     def test_routes_project_url(self):
         scraper = ClaudeScraper()
         resp = _mock_response(
-            "https://claude.ai/api/organizations/org-1/projects?is_archived=false",
+            "https://claude.ai/api/organizations/org-1/"
+            "projects?is_archived=false",
             [{"uuid": "p1", "name": "Test"}],
         )
 
@@ -263,7 +292,11 @@ class TestBuildMapping:
     def test_builds_mapping_skipping_starter_projects(self):
         scraper = ClaudeScraper()
         scraper._projects = {
-            "proj-aaa": {"name": "My Project", "instructions": "Be helpful", "is_starter": False},
+            "proj-aaa": {
+                "name": "My Project",
+                "instructions": "Be helpful",
+                "is_starter": False,
+            },
             "proj-starter": {
                 "name": "Getting Started",
                 "instructions": "",
@@ -290,8 +323,16 @@ class TestBuildMapping:
     def test_builds_mapping_with_multiple_projects(self):
         scraper = ClaudeScraper()
         scraper._projects = {
-            "proj-aaa": {"name": "Project A", "instructions": "", "is_starter": False},
-            "proj-bbb": {"name": "Project B", "instructions": "X", "is_starter": False},
+            "proj-aaa": {
+                "name": "Project A",
+                "instructions": "",
+                "is_starter": False,
+            },
+            "proj-bbb": {
+                "name": "Project B",
+                "instructions": "X",
+                "is_starter": False,
+            },
         }
         scraper._chat_to_project = {
             "chat-1": "proj-aaa",
@@ -321,59 +362,108 @@ class TestBuildMapping:
         assert "T" in mapping.scraped_at  # ISO format
 
 
+class TestExtractOrgId:
+    def test_extracts_org_uuid(self):
+        scraper = ClaudeScraper()
+        org_id = scraper._extract_org_id(CURRENT_USER_DATA)
+        assert org_id == "org-uuid-123"
+
+    def test_no_memberships_raises(self):
+        scraper = ClaudeScraper()
+        with pytest.raises(ValueError, match="No organizations found"):
+            scraper._extract_org_id({"account": {"memberships": []}})
+
+    def test_empty_uuid_raises(self):
+        scraper = ClaudeScraper()
+        data = {
+            "account": {
+                "memberships": [{"organization": {"uuid": ""}}]
+            }
+        }
+        with pytest.raises(
+            ValueError, match="Could not extract organization UUID"
+        ):
+            scraper._extract_org_id(data)
+
+    def test_missing_account_key_raises(self):
+        scraper = ClaudeScraper()
+        with pytest.raises(ValueError, match="No organizations found"):
+            scraper._extract_org_id({})
+
+
 class TestScrape:
-    @patch("builtins.input", return_value="")
     @patch("builtins.print")
-    def test_full_scrape_flow(self, mock_print, mock_input, tmp_path: Path):
+    def test_full_scrape_flow(self, mock_print, tmp_path: Path):
         scraper = ClaudeScraper()
         output = tmp_path / "mapping.json"
 
         mock_pw, mock_page = _make_pw_mock()
 
-        # Pre-populate captured data (simulating intercepted responses)
-        scraper._projects = {
-            "proj-aaa": {"name": "My Project", "instructions": "Expert", "is_starter": False},
-            "proj-bbb": {"name": "Other", "instructions": "", "is_starter": False},
-        }
+        # Pre-populate chat mapping (simulating intercepted conversations_v2)
         scraper._chat_to_project = {
-            "chat-1": "proj-aaa",
-            "chat-2": "proj-aaa",
-            "chat-3": "proj-bbb",
+            "chat-uuid-001": "proj-uuid-aaa",
+            "chat-uuid-002": "proj-uuid-aaa",
+            "chat-uuid-003": "proj-uuid-bbb",
         }
 
-        with patch.object(scraper, "_start_playwright", return_value=mock_pw):
+        with patch.object(
+            scraper, "_start_playwright", return_value=mock_pw
+        ):
             mapping = scraper.scrape(output)
 
-        # Verify mapping
+        # Verify mapping (starter excluded)
         assert len(mapping.chats) == 3
-        assert mapping.chats["chat-1"] == "my-project"
-        assert mapping.chats["chat-2"] == "my-project"
-        assert mapping.chats["chat-3"] == "other"
+        assert mapping.chats["chat-uuid-001"] == "my-project"
+        assert mapping.chats["chat-uuid-002"] == "my-project"
+        assert mapping.chats["chat-uuid-003"] == "another-project"
 
         assert len(mapping.projects) == 2
-        assert mapping.projects["proj-aaa"]["name"] == "My Project"
+        assert mapping.projects["proj-uuid-aaa"]["name"] == "My Project"
 
         # Verify file saved
         assert output.exists()
         saved = json.loads(output.read_text())
-        assert saved["chats"]["chat-1"] == "my-project"
+        assert saved["chats"]["chat-uuid-001"] == "my-project"
         assert "scraped_at" in saved
 
         # Verify CDP connection
-        mock_pw.chromium.connect_over_cdp.assert_called_once_with("http://localhost:9222")
+        mock_pw.chromium.connect_over_cdp.assert_called_once_with(
+            "http://localhost:9222"
+        )
 
-        # Verify response interceptor was registered
-        mock_page.on.assert_called_once_with("response", scraper._handle_response)
+        # Verify response interceptor registered
+        mock_page.on.assert_called_once_with(
+            "response", scraper._handle_response
+        )
 
-        # Verify user was prompted
-        mock_input.assert_called_once()
+        # Verify org_id and projects fetched via evaluate
+        assert mock_page.evaluate.call_count == 2
+        first_call = mock_page.evaluate.call_args_list[0]
+        assert "current_user" in first_call.args[0]
+        second_call = mock_page.evaluate.call_args_list[1]
+        assert "organizations" in second_call.args[0]
+        assert second_call.args[1] == "org-uuid-123"
+
+        # Verify navigation to non-starter projects only
+        goto_urls = [c.args[0] for c in mock_page.goto.call_args_list]
+        assert "https://claude.ai/project/proj-uuid-aaa" in goto_urls
+        assert "https://claude.ai/project/proj-uuid-bbb" in goto_urls
+        assert not any("proj-uuid-starter" in u for u in goto_urls)
+
+        # Verify wait after each navigation
+        assert mock_page.wait_for_timeout.call_count == 2
+        mock_page.wait_for_timeout.assert_called_with(2000)
+
+        # Verify progress printed
+        print_args = [str(c) for c in mock_print.call_args_list]
+        assert any("1/2" in s for s in print_args)
+        assert any("2/2" in s for s in print_args)
 
         # Verify cleanup
         mock_pw.stop.assert_called_once()
 
-    @patch("builtins.input", return_value="")
     @patch("builtins.print")
-    def test_finds_claude_tab(self, mock_print, mock_input, tmp_path: Path):
+    def test_finds_claude_tab(self, mock_print, tmp_path: Path):
         scraper = ClaudeScraper()
         output = tmp_path / "mapping.json"
 
@@ -385,21 +475,28 @@ class TestScrape:
         page_other.url = "https://google.com"
         page_claude = MagicMock()
         page_claude.url = "https://claude.ai/chat/123"
+        page_claude.evaluate.side_effect = [
+            CURRENT_USER_DATA,
+            PROJECTS_RESPONSE,
+        ]
 
         mock_context.pages = [page_other, page_claude]
         mock_browser.contexts = [mock_context]
         mock_pw.chromium.connect_over_cdp.return_value = mock_browser
 
-        with patch.object(scraper, "_start_playwright", return_value=mock_pw):
+        with patch.object(
+            scraper, "_start_playwright", return_value=mock_pw
+        ):
             scraper.scrape(output)
 
         # Should register on the claude.ai tab, not google.com
-        page_claude.on.assert_called_once_with("response", scraper._handle_response)
+        page_claude.on.assert_called_once_with(
+            "response", scraper._handle_response
+        )
         page_other.on.assert_not_called()
 
-    @patch("builtins.input", return_value="")
     @patch("builtins.print")
-    def test_opens_claude_if_no_tab(self, mock_print, mock_input, tmp_path: Path):
+    def test_opens_claude_if_no_tab(self, mock_print, tmp_path: Path):
         scraper = ClaudeScraper()
         output = tmp_path / "mapping.json"
 
@@ -409,15 +506,22 @@ class TestScrape:
 
         page_other = MagicMock()
         page_other.url = "https://google.com"
+        page_other.evaluate.side_effect = [
+            CURRENT_USER_DATA,
+            PROJECTS_RESPONSE,
+        ]
         mock_context.pages = [page_other]
         mock_browser.contexts = [mock_context]
         mock_pw.chromium.connect_over_cdp.return_value = mock_browser
 
-        with patch.object(scraper, "_start_playwright", return_value=mock_pw):
+        with patch.object(
+            scraper, "_start_playwright", return_value=mock_pw
+        ):
             scraper.scrape(output)
 
-        # Should use first page and navigate to claude.ai
-        page_other.goto.assert_called_once_with("https://claude.ai")
+        # Should use first page and navigate to claude.ai first
+        first_goto = page_other.goto.call_args_list[0]
+        assert first_goto.args[0] == "https://claude.ai"
 
     def test_no_contexts_raises(self):
         scraper = ClaudeScraper()
@@ -428,35 +532,43 @@ class TestScrape:
         mock_pw.chromium.connect_over_cdp.return_value = mock_browser
 
         with (
-            patch.object(scraper, "_start_playwright", return_value=mock_pw),
+            patch.object(
+                scraper, "_start_playwright", return_value=mock_pw
+            ),
             pytest.raises(RuntimeError, match="No browser contexts found"),
         ):
             scraper.scrape(Path("out.json"))
 
         mock_pw.stop.assert_called_once()
 
-    @patch("builtins.input", return_value="")
     @patch("builtins.print")
-    def test_creates_parent_directories(self, mock_print, mock_input, tmp_path: Path):
+    def test_creates_parent_directories(
+        self, mock_print, tmp_path: Path
+    ):
         scraper = ClaudeScraper()
         output = tmp_path / "sub" / "dir" / "mapping.json"
 
         mock_pw, _ = _make_pw_mock()
 
-        with patch.object(scraper, "_start_playwright", return_value=mock_pw):
+        with patch.object(
+            scraper, "_start_playwright", return_value=mock_pw
+        ):
             scraper.scrape(output)
 
         assert output.exists()
 
-    @patch("builtins.input", return_value="")
     @patch("builtins.print")
-    def test_stops_playwright_on_success(self, mock_print, mock_input, tmp_path: Path):
+    def test_stops_playwright_on_success(
+        self, mock_print, tmp_path: Path
+    ):
         scraper = ClaudeScraper()
         output = tmp_path / "mapping.json"
 
         mock_pw, _ = _make_pw_mock()
 
-        with patch.object(scraper, "_start_playwright", return_value=mock_pw):
+        with patch.object(
+            scraper, "_start_playwright", return_value=mock_pw
+        ):
             scraper.scrape(output)
 
         mock_pw.stop.assert_called_once()
@@ -465,32 +577,38 @@ class TestScrape:
         scraper = ClaudeScraper()
 
         mock_pw = MagicMock()
-        mock_pw.chromium.connect_over_cdp.side_effect = Exception("Connection refused")
+        mock_pw.chromium.connect_over_cdp.side_effect = Exception(
+            "Connection refused"
+        )
 
         with (
-            patch.object(scraper, "_start_playwright", return_value=mock_pw),
+            patch.object(
+                scraper, "_start_playwright", return_value=mock_pw
+            ),
             pytest.raises(Exception, match="Connection refused"),
         ):
             scraper.scrape(Path("out.json"))
 
         mock_pw.stop.assert_called_once()
 
-    @patch("builtins.input", return_value="")
     @patch("builtins.print")
-    def test_custom_cdp_url(self, mock_print, mock_input, tmp_path: Path):
+    def test_custom_cdp_url(self, mock_print, tmp_path: Path):
         scraper = ClaudeScraper(cdp_url="http://localhost:9333")
         output = tmp_path / "mapping.json"
 
         mock_pw, _ = _make_pw_mock()
 
-        with patch.object(scraper, "_start_playwright", return_value=mock_pw):
+        with patch.object(
+            scraper, "_start_playwright", return_value=mock_pw
+        ):
             scraper.scrape(output)
 
-        mock_pw.chromium.connect_over_cdp.assert_called_once_with("http://localhost:9333")
+        mock_pw.chromium.connect_over_cdp.assert_called_once_with(
+            "http://localhost:9333"
+        )
 
-    @patch("builtins.input", return_value="")
     @patch("builtins.print")
-    def test_new_page_when_no_pages(self, mock_print, mock_input, tmp_path: Path):
+    def test_new_page_when_no_pages(self, mock_print, tmp_path: Path):
         scraper = ClaudeScraper()
         output = tmp_path / "mapping.json"
 
@@ -498,17 +616,99 @@ class TestScrape:
         mock_browser = MagicMock()
         mock_context = MagicMock()
         mock_new_page = MagicMock()
+        mock_new_page.evaluate.side_effect = [
+            CURRENT_USER_DATA,
+            PROJECTS_RESPONSE,
+        ]
 
         mock_context.pages = []
         mock_context.new_page.return_value = mock_new_page
         mock_browser.contexts = [mock_context]
         mock_pw.chromium.connect_over_cdp.return_value = mock_browser
 
-        with patch.object(scraper, "_start_playwright", return_value=mock_pw):
+        with patch.object(
+            scraper, "_start_playwright", return_value=mock_pw
+        ):
             scraper.scrape(output)
 
         mock_context.new_page.assert_called_once()
-        mock_new_page.goto.assert_called_once_with("https://claude.ai")
+        first_goto = mock_new_page.goto.call_args_list[0]
+        assert first_goto.args[0] == "https://claude.ai"
+
+    @patch("builtins.print")
+    def test_skips_starter_in_navigation(
+        self, mock_print, tmp_path: Path
+    ):
+        scraper = ClaudeScraper()
+        output = tmp_path / "mapping.json"
+
+        mock_pw, mock_page = _make_pw_mock()
+
+        with patch.object(
+            scraper, "_start_playwright", return_value=mock_pw
+        ):
+            scraper.scrape(output)
+
+        # Only 2 non-starter projects navigated
+        goto_urls = [c.args[0] for c in mock_page.goto.call_args_list]
+        assert len(goto_urls) == 2
+        assert not any("proj-uuid-starter" in u for u in goto_urls)
+
+    @patch("builtins.print")
+    def test_prints_progress(self, mock_print, tmp_path: Path):
+        scraper = ClaudeScraper()
+        output = tmp_path / "mapping.json"
+
+        mock_pw, _ = _make_pw_mock()
+
+        with patch.object(
+            scraper, "_start_playwright", return_value=mock_pw
+        ):
+            scraper.scrape(output)
+
+        print_args = [str(c) for c in mock_print.call_args_list]
+        assert any("Loading project 1/2" in s for s in print_args)
+        assert any("Loading project 2/2" in s for s in print_args)
+        assert any("My Project" in s for s in print_args)
+        assert any("Another Project" in s for s in print_args)
+
+    @patch("builtins.print")
+    def test_waits_after_each_navigation(
+        self, mock_print, tmp_path: Path
+    ):
+        scraper = ClaudeScraper()
+        output = tmp_path / "mapping.json"
+
+        mock_pw, mock_page = _make_pw_mock()
+
+        with patch.object(
+            scraper, "_start_playwright", return_value=mock_pw
+        ):
+            scraper.scrape(output)
+
+        assert mock_page.wait_for_timeout.call_count == 2
+        for call in mock_page.wait_for_timeout.call_args_list:
+            assert call.args[0] == 2000
+
+    @patch("builtins.print")
+    def test_processes_evaluate_projects_data(
+        self, mock_print, tmp_path: Path
+    ):
+        """Projects data from evaluate populates self._projects."""
+        scraper = ClaudeScraper()
+        output = tmp_path / "mapping.json"
+
+        mock_pw, _ = _make_pw_mock()
+
+        with patch.object(
+            scraper, "_start_playwright", return_value=mock_pw
+        ):
+            scraper.scrape(output)
+
+        # All 3 projects (including starter) should be in _projects
+        assert len(scraper._projects) == 3
+        assert scraper._projects["proj-uuid-aaa"]["name"] == "My Project"
+        assert scraper._projects["proj-uuid-starter"]["is_starter"] is True
 
 
 class TestStartPlaywright:
@@ -516,7 +716,10 @@ class TestStartPlaywright:
         scraper = ClaudeScraper()
 
         with (
-            patch.dict("sys.modules", {"playwright": None, "playwright.sync_api": None}),
+            patch.dict(
+                "sys.modules",
+                {"playwright": None, "playwright.sync_api": None},
+            ),
             pytest.raises(ImportError, match="playwright is required"),
         ):
             scraper._start_playwright()
@@ -563,8 +766,13 @@ class TestIntegrationFlow:
         assert mapping.chats["chat-uuid-003"] == "another-project"
 
         # Project metadata
-        assert mapping.projects["proj-uuid-aaa"]["name"] == "My Project"
-        assert mapping.projects["proj-uuid-aaa"]["instructions"] == "You are a Python expert."
+        assert (
+            mapping.projects["proj-uuid-aaa"]["name"] == "My Project"
+        )
+        assert (
+            mapping.projects["proj-uuid-aaa"]["instructions"]
+            == "You are a Python expert."
+        )
         assert mapping.projects["proj-uuid-bbb"]["instructions"] == ""
 
     def test_multiple_project_responses_merge(self):
@@ -575,7 +783,8 @@ class TestIntegrationFlow:
             [{"uuid": "p1", "name": "First"}],
         )
         resp2 = _mock_response(
-            "https://claude.ai/api/organizations/org-1/projects?cursor=next",
+            "https://claude.ai/api/organizations/org-1/"
+            "projects?cursor=next",
             [{"uuid": "p2", "name": "Second"}],
         )
 
