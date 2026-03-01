@@ -1,9 +1,9 @@
-"""Claude.ai Playwright scraper — automated response interception via CDP.
+"""Claude.ai Playwright scraper — intercepts chat_conversations API.
 
-Connects to an already-running Chrome instance via CDP, registers a response
-interceptor, navigates to claude.ai to discover org_id and project list from
-intercepted API responses, then navigates to each project page to capture
-conversations_v2 responses and build a chat→project mapping.
+Connects to Chrome via CDP, navigates to claude.ai, and captures
+chat_conversations API responses. Each chat object contains a project
+field with uuid and name, so a single page load captures the full
+chat→project mapping without per-project navigation.
 """
 
 from __future__ import annotations
@@ -22,22 +22,22 @@ log = logging.getLogger(__name__)
 
 BASE_URL = "https://claude.ai"
 
-# Regex patterns for intercepted API URLs
 _RE_ORG_ID = re.compile(r"/api/organizations/([a-f0-9-]{36})/")
-_RE_PROJECTS = re.compile(r"/api/organizations/[^/]+/projects")
-_RE_CONVERSATIONS = re.compile(
-    r"/projects/([^/]+)/conversations_v2"
+_RE_CHAT_CONVERSATIONS = re.compile(
+    r"/api/organizations/[^/]+/chat_conversations"
 )
 
 
 class ClaudeScraper:
-    """Scrape chat→project mapping from Claude.ai via Playwright CDP interception."""
+    """Scrape chat→project mapping from Claude.ai via CDP."""
 
-    def __init__(self, cdp_url: str = "http://localhost:9222") -> None:
+    def __init__(
+        self, cdp_url: str = "http://localhost:9222"
+    ) -> None:
         self._cdp_url = cdp_url
         self._org_id: str | None = None
-        self._projects: dict[str, dict] = {}  # {uuid: {name, instructions, is_starter}}
-        self._chat_to_project: dict[str, str] = {}  # {chat_uuid: project_uuid}
+        self._chats: dict[str, dict] = {}
+        self._projects: dict[str, dict] = {}
 
     @property
     def name(self) -> str:
@@ -52,70 +52,26 @@ class ClaudeScraper:
         )
 
     def _handle_response(self, response: object) -> None:
-        """Response interceptor — captures org_id, projects, and conversations."""
+        """Intercept org_id and chat_conversations."""
         url = response.url  # type: ignore[attr-defined]
 
-        # Debug: log all conversation-related URLs
-        if "conversation" in url.lower():
-            print(f"DEBUG captured: {url}")
-
-        # Try to discover org_id from any API URL
         if not self._org_id:
             m = _RE_ORG_ID.search(url)
             if m:
                 self._org_id = m.group(1)
                 log.info("Discovered org_id: %s", self._org_id)
 
-        # Match conversation responses FIRST — conversations_v2 URLs
-        # also match _RE_PROJECTS (both contain "/projects/") so we
-        # must check the more specific pattern before the general one.
-        m = _RE_CONVERSATIONS.search(url)
-        if m:
-            project_uuid = m.group(1)
-            self._handle_conversations_response(response, project_uuid)
-            return
+        if _RE_CHAT_CONVERSATIONS.search(url):
+            self._handle_chat_conversations(response)
 
-        # Match project list responses
-        if _RE_PROJECTS.search(url):
-            self._handle_projects_response(response)
-            return
-
-    def _handle_projects_response(self, response: object) -> None:
-        """Extract project list from intercepted response."""
-        try:
-            body = response.json()  # type: ignore[attr-defined]
-        except Exception:
-            log.debug("Could not parse projects response as JSON")
-            return
-
-        if not isinstance(body, list):
-            return
-
-        for proj in body:
-            uuid = proj.get("uuid", "")
-            if not uuid:
-                continue
-            is_starter = proj.get("is_starter_project", False)
-            self._projects[uuid] = {
-                "name": proj.get("name", "Untitled"),
-                "instructions": proj.get("prompt_template", "") or "",
-                "is_starter": is_starter,
-            }
-
-        log.info(
-            "Intercepted %d projects (total %d tracked)",
-            len(body),
-            len(self._projects),
-        )
-
-    def _handle_conversations_response(
-        self, response: object, project_uuid: str
+    def _handle_chat_conversations(
+        self, response: object
     ) -> None:
-        """Extract chat UUIDs from intercepted conversation response."""
+        """Extract chats and project info from response."""
         try:
             body = response.json()  # type: ignore[attr-defined]
         except Exception:
-            log.debug("Could not parse conversations response as JSON")
+            log.debug("Could not parse chat_conversations")
             return
 
         chats: list[dict] = []
@@ -129,39 +85,46 @@ class ClaudeScraper:
         count = 0
         for chat in chats:
             chat_uuid = chat.get("uuid", "")
-            if chat_uuid:
-                self._chat_to_project[chat_uuid] = project_uuid
-                count += 1
+            if not chat_uuid:
+                continue
+            self._chats[chat_uuid] = chat
+            count += 1
+
+            project = chat.get("project")
+            if not isinstance(project, dict):
+                continue
+            proj_uuid = project.get("uuid", "")
+            if proj_uuid and proj_uuid not in self._projects:
+                self._projects[proj_uuid] = {
+                    "name": project.get("name", "Untitled"),
+                }
 
         log.info(
-            "Intercepted %d chats for project %s",
+            "Captured %d chats (total %d)",
             count,
-            project_uuid,
+            len(self._chats),
         )
 
     def _build_mapping(self) -> ScrapedMapping:
-        """Build ScrapedMapping from captured data, skipping starter projects."""
+        """Build mapping from captured chats."""
         chat_mapping: dict[str, str] = {}
+
+        for chat_uuid, chat in self._chats.items():
+            project = chat.get("project")
+            if not isinstance(project, dict):
+                continue
+            proj_uuid = project.get("uuid", "")
+            if not proj_uuid:
+                continue
+            proj_name = project.get("name", "Untitled")
+            chat_mapping[chat_uuid] = safe_filename(proj_name)
+
         project_metadata: dict[str, dict] = {}
-
-        # Filter out starter projects
-        real_projects = {
-            uuid: info
-            for uuid, info in self._projects.items()
-            if not info.get("is_starter", False)
-        }
-
-        for proj_uuid, info in real_projects.items():
-            folder_name = safe_filename(info["name"])
+        for proj_uuid, info in self._projects.items():
             project_metadata[proj_uuid] = {
                 "name": info["name"],
-                "instructions": info["instructions"],
+                "instructions": "",
             }
-
-            # Map chats that belong to this project
-            for chat_uuid, mapped_proj in self._chat_to_project.items():
-                if mapped_proj == proj_uuid:
-                    chat_mapping[chat_uuid] = folder_name
 
         return ScrapedMapping(
             chats=chat_mapping,
@@ -170,114 +133,92 @@ class ClaudeScraper:
         )
 
     def _start_playwright(self) -> object:
-        """Import and start Playwright. Returns the Playwright instance."""
+        """Import and start Playwright."""
         try:
             from playwright.sync_api import sync_playwright
         except ImportError as exc:
             raise ImportError(
-                "playwright is required for the Claude scraper. "
-                "Install it with: pip install anticlaw[scraper] "
+                "playwright is required for the Claude "
+                "scraper. Install it with: "
+                "pip install anticlaw[scraper] "
                 "&& playwright install chromium"
             ) from exc
         return sync_playwright().start()
 
     def scrape(self, output: Path) -> ScrapedMapping:
-        """Connect to Chrome, auto-navigate projects, save mapping.
-
-        Requires Chrome to be running with --remote-debugging-port=9222
-        and logged in to claude.ai.
-        """
+        """Load claude.ai, capture chat_conversations, save."""
         pw = self._start_playwright()
         try:
-            browser = pw.chromium.connect_over_cdp(self._cdp_url)
+            browser = pw.chromium.connect_over_cdp(
+                self._cdp_url
+            )
             contexts = browser.contexts
             if not contexts:
                 raise RuntimeError(
-                    "No browser contexts found. Is Chrome running with "
-                    "--remote-debugging-port=9222 and a claude.ai tab open?"
+                    "No browser contexts found. Is Chrome "
+                    "running with "
+                    "--remote-debugging-port=9222?"
                 )
 
             context = contexts[0]
             pages = context.pages
 
-            # Find an existing claude.ai tab or use the first page
             page = None
             for p in pages:
                 if "claude.ai" in p.url:
                     page = p
                     break
             if page is None:
-                page = pages[0] if pages else context.new_page()
+                page = (
+                    pages[0] if pages else context.new_page()
+                )
 
-            # Register response interceptor BEFORE any navigation
             page.on("response", self._handle_response)
 
-            # Navigate to claude.ai — triggers API requests that the
-            # interceptor captures for org_id and project list discovery
             page.goto("https://claude.ai")
             page.wait_for_load_state("networkidle")
 
-            # Verify org_id was discovered from intercepted URLs
             if not self._org_id:
                 raise RuntimeError(
-                    "Could not discover org ID from intercepted "
-                    "responses. Is the Chrome session logged in to "
-                    "claude.ai?"
+                    "Could not discover org ID. "
+                    "Is Chrome logged in to claude.ai?"
                 )
 
-            # Projects should have been captured by the interceptor
-            if not self._projects:
+            if not self._chats:
                 raise RuntimeError(
-                    "No projects found in intercepted responses."
+                    "No chats captured from "
+                    "chat_conversations responses."
                 )
 
-            # Navigate to each non-starter project to trigger
-            # conversations_v2 responses
-            real_projects = [
-                (uuid, info)
-                for uuid, info in self._projects.items()
-                if not info.get("is_starter", False)
-            ]
-
-            total = len(real_projects)
-            for i, (proj_uuid, info) in enumerate(real_projects, 1):
-                print(
-                    f"Loading project {i}/{total}: {info['name']}..."
-                )
-                page.goto(f"https://claude.ai/project/{proj_uuid}")
-                try:
-                    page.wait_for_response(
-                        lambda r, pid=proj_uuid: (
-                            f"projects/{pid}" in r.url
-                        ),
-                        timeout=10000,
-                    )
-                except Exception:
-                    print(
-                        f"  Warning: no conversations response "
-                        f"for {info['name']}"
-                    )
-
-            # Build mapping from intercepted conversation responses
             mapping = self._build_mapping()
 
-            # Save to file
+            print(
+                f"Captured {len(self._chats)} chats, "
+                f"{len(self._projects)} projects."
+            )
+            print(
+                f"Mapped {len(mapping.chats)} chats to "
+                f"{len(mapping.projects)} projects."
+            )
+
             output.parent.mkdir(parents=True, exist_ok=True)
-            mapping_dict = {
-                "chats": mapping.chats,
-                "projects": mapping.projects,
-                "scraped_at": mapping.scraped_at,
-            }
             output.write_text(
-                json.dumps(mapping_dict, indent=2, ensure_ascii=False),
+                json.dumps(
+                    {
+                        "chats": mapping.chats,
+                        "projects": mapping.projects,
+                        "scraped_at": mapping.scraped_at,
+                    },
+                    indent=2,
+                    ensure_ascii=False,
+                ),
                 encoding="utf-8",
             )
 
             log.info(
-                "Saved mapping: %d chats across %d projects → %s",
+                "Saved mapping: %d chats, %d projects",
                 len(mapping.chats),
                 len(mapping.projects),
-                output,
             )
             return mapping
 
