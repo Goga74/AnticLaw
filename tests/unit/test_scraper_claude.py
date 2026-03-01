@@ -50,7 +50,6 @@ ALL_CHATS = [
     },
 ]
 
-# Simulates pagination: starred first, then unstarred
 CHATS_STARRED = ALL_CHATS[:1]
 CHATS_UNSTARRED = ALL_CHATS[1:]
 
@@ -65,8 +64,13 @@ def _mock_response(url: str, data: object) -> MagicMock:
 
 def _make_pw_mock(
     page_url: str = "https://claude.ai",
+    starred_chats: list | None = None,
+    unstarred_chats: list | None = None,
 ) -> tuple[MagicMock, MagicMock]:
-    """Create mock Playwright. Returns (pw, page)."""
+    """Create mock Playwright with evaluate support.
+
+    Returns (pw, page).
+    """
     mock_pw = MagicMock()
     mock_browser = MagicMock()
     mock_context = MagicMock()
@@ -79,19 +83,15 @@ def _make_pw_mock(
         mock_browser
     )
 
+    # Setup evaluate to return paginated chats
+    mock_page.evaluate.side_effect = [
+        starred_chats if starred_chats is not None else [],
+        unstarred_chats
+        if unstarred_chats is not None
+        else [],
+    ]
+
     return mock_pw, mock_page
-
-
-def _prepopulate(scraper: ClaudeScraper) -> None:
-    """Simulate state after page load intercepted responses."""
-    scraper._org_id = ORG_UUID
-    for chat in ALL_CHATS:
-        if chat.get("uuid"):
-            scraper._chats[chat["uuid"]] = chat
-    scraper._projects = {
-        "proj-aaa": {"name": "My Project"},
-        "proj-bbb": {"name": "Another Project"},
-    }
 
 
 class TestClaudeScraperProperties:
@@ -116,28 +116,19 @@ class TestClaudeScraperProperties:
         assert s._cdp_url == "http://localhost:9222"
 
 
-class TestHandleChatConversations:
-    def _url(self, qs: str = "") -> str:
-        return (
-            "https://claude.ai/api/organizations/"
-            f"{ORG_UUID}/chat_conversations{qs}"
-        )
-
-    def test_captures_chats_from_list(self):
+class TestProcessChats:
+    def test_processes_chats_from_list(self):
         scraper = ClaudeScraper()
-        resp = _mock_response(self._url(), ALL_CHATS)
+        count = scraper._process_chats(ALL_CHATS)
 
-        scraper._handle_chat_conversations(resp)
-
+        assert count == 4
         assert len(scraper._chats) == 4
         assert "chat-001" in scraper._chats
         assert "chat-004" in scraper._chats
 
     def test_extracts_project_info(self):
         scraper = ClaudeScraper()
-        resp = _mock_response(self._url(), ALL_CHATS)
-
-        scraper._handle_chat_conversations(resp)
+        scraper._process_chats(ALL_CHATS)
 
         assert len(scraper._projects) == 2
         assert (
@@ -151,123 +142,76 @@ class TestHandleChatConversations:
 
     def test_skips_chats_without_uuid(self):
         scraper = ClaudeScraper()
-        resp = _mock_response(
-            self._url(),
+        count = scraper._process_chats(
             [{"uuid": ""}, {"uuid": "valid"}],
         )
 
-        scraper._handle_chat_conversations(resp)
-
-        assert len(scraper._chats) == 1
+        assert count == 1
         assert "valid" in scraper._chats
 
     def test_deduplicates_by_uuid(self):
         scraper = ClaudeScraper()
-        resp1 = _mock_response(
-            self._url("?starred=true"),
-            [ALL_CHATS[0]],
-        )
-        resp2 = _mock_response(
-            self._url("?starred=false"),
-            [ALL_CHATS[0], ALL_CHATS[1]],
-        )
-
-        scraper._handle_chat_conversations(resp1)
-        scraper._handle_chat_conversations(resp2)
+        scraper._process_chats([ALL_CHATS[0]])
+        scraper._process_chats([ALL_CHATS[0], ALL_CHATS[1]])
 
         assert len(scraper._chats) == 2
 
-    def test_handles_json_error(self):
-        scraper = ClaudeScraper()
-        resp = MagicMock()
-        resp.url = self._url()
-        resp.json.side_effect = Exception("bad json")
-
-        scraper._handle_chat_conversations(resp)
-
-        assert len(scraper._chats) == 0
-
     def test_handles_chats_without_project(self):
         scraper = ClaudeScraper()
-        resp = _mock_response(
-            self._url(),
+        scraper._process_chats(
             [
-                {
-                    "uuid": "c1",
-                    "project": None,
-                },
+                {"uuid": "c1", "project": None},
                 {
                     "uuid": "c2",
-                    "project": {"uuid": "p1", "name": "P"},
+                    "project": {
+                        "uuid": "p1",
+                        "name": "P",
+                    },
                 },
             ],
         )
 
-        scraper._handle_chat_conversations(resp)
-
         assert len(scraper._chats) == 2
         assert len(scraper._projects) == 1
 
-    def test_captures_pagination(self):
-        """Starred and unstarred responses merge."""
+    def test_starred_and_unstarred_merge(self):
         scraper = ClaudeScraper()
-        r1 = _mock_response(
-            self._url("?starred=true"),
-            CHATS_STARRED,
-        )
-        r2 = _mock_response(
-            self._url("?starred=false"),
-            CHATS_UNSTARRED,
-        )
-
-        scraper._handle_chat_conversations(r1)
-        scraper._handle_chat_conversations(r2)
+        scraper._process_chats(CHATS_STARRED)
+        scraper._process_chats(CHATS_UNSTARRED)
 
         assert len(scraper._chats) == 4
         assert len(scraper._projects) == 2
 
-    def test_handles_dict_with_data_key(self):
+    def test_returns_count_added(self):
         scraper = ClaudeScraper()
-        resp = _mock_response(
-            self._url(),
-            {"data": ALL_CHATS[:2]},
-        )
 
-        scraper._handle_chat_conversations(resp)
+        count1 = scraper._process_chats(ALL_CHATS[:2])
+        assert count1 == 2
 
-        assert len(scraper._chats) == 2
+        count2 = scraper._process_chats(ALL_CHATS)
+        assert count2 == 4  # all 4 stored (dedup overwrites)
+        assert len(scraper._chats) == 4
 
 
 class TestHandleResponseRouting:
-    def test_ignores_unrelated_urls(self):
+    def test_discovers_org_id(self):
         scraper = ClaudeScraper()
         resp = _mock_response(
-            "https://claude.ai/api/auth/current_user",
+            "https://claude.ai/api/organizations/"
+            f"{ORG_UUID}/settings",
             {},
         )
 
         scraper._handle_response(resp)
 
-        assert len(scraper._chats) == 0
+        assert scraper._org_id == ORG_UUID
 
-    def test_routes_chat_conversations(self):
-        scraper = ClaudeScraper()
-        resp = _mock_response(
-            "https://claude.ai/api/organizations/"
-            f"{ORG_UUID}/chat_conversations?limit=30",
-            [ALL_CHATS[0]],
-        )
-
-        scraper._handle_response(resp)
-
-        assert "chat-001" in scraper._chats
-
-    def test_discovers_org_id(self):
+    def test_org_id_from_chat_conversations_url(self):
         scraper = ClaudeScraper()
         resp = _mock_response(
             "https://claude.ai/api/organizations/"
             f"{ORG_UUID}/chat_conversations",
-            [],
+            {},
         )
 
         scraper._handle_response(resp)
@@ -282,15 +226,15 @@ class TestHandleResponseRouting:
         scraper._handle_response(
             _mock_response(
                 f"https://claude.ai/api/organizations/"
-                f"{u1}/chat_conversations",
-                [],
+                f"{u1}/settings",
+                {},
             )
         )
         scraper._handle_response(
             _mock_response(
                 f"https://claude.ai/api/organizations/"
-                f"{u2}/chat_conversations",
-                [],
+                f"{u2}/settings",
+                {},
             )
         )
 
@@ -300,13 +244,89 @@ class TestHandleResponseRouting:
         scraper = ClaudeScraper()
         resp = _mock_response(
             "https://claude.ai/api/organizations/"
-            "short/chat_conversations",
-            [],
+            "short/settings",
+            {},
         )
 
         scraper._handle_response(resp)
 
         assert scraper._org_id is None
+
+    def test_ignores_unrelated_urls(self):
+        scraper = ClaudeScraper()
+        resp = _mock_response(
+            "https://claude.ai/api/auth/current_user",
+            {},
+        )
+
+        scraper._handle_response(resp)
+
+        assert scraper._org_id is None
+
+
+class TestFetchAllChats:
+    def test_fetches_starred_and_unstarred(self):
+        scraper = ClaudeScraper()
+        scraper._org_id = ORG_UUID
+        mock_page = MagicMock()
+        mock_page.evaluate.side_effect = [
+            CHATS_STARRED,
+            CHATS_UNSTARRED,
+        ]
+
+        scraper._fetch_all_chats(mock_page)
+
+        assert len(scraper._chats) == 4
+        assert len(scraper._projects) == 2
+        assert mock_page.evaluate.call_count == 2
+
+    def test_passes_correct_args(self):
+        scraper = ClaudeScraper()
+        scraper._org_id = ORG_UUID
+        mock_page = MagicMock()
+        mock_page.evaluate.side_effect = [[], []]
+
+        scraper._fetch_all_chats(mock_page)
+
+        calls = mock_page.evaluate.call_args_list
+        # First call: starred=True
+        assert calls[0][0][1] == [ORG_UUID, True]
+        # Second call: starred=False
+        assert calls[1][0][1] == [ORG_UUID, False]
+
+    def test_handles_non_list_response(self):
+        scraper = ClaudeScraper()
+        scraper._org_id = ORG_UUID
+        mock_page = MagicMock()
+        mock_page.evaluate.side_effect = [None, "bad"]
+
+        scraper._fetch_all_chats(mock_page)
+
+        assert len(scraper._chats) == 0
+
+    def test_deduplicates_across_starred_unstarred(self):
+        scraper = ClaudeScraper()
+        scraper._org_id = ORG_UUID
+        mock_page = MagicMock()
+        mock_page.evaluate.side_effect = [
+            [ALL_CHATS[0]],  # starred
+            [ALL_CHATS[0], ALL_CHATS[1]],  # unstarred (dup)
+        ]
+
+        scraper._fetch_all_chats(mock_page)
+
+        assert len(scraper._chats) == 2
+
+    def test_empty_results(self):
+        scraper = ClaudeScraper()
+        scraper._org_id = ORG_UUID
+        mock_page = MagicMock()
+        mock_page.evaluate.side_effect = [[], []]
+
+        scraper._fetch_all_chats(mock_page)
+
+        assert len(scraper._chats) == 0
+        assert len(scraper._projects) == 0
 
 
 class TestBuildMapping:
@@ -410,8 +430,11 @@ class TestScrape:
     ):
         scraper = ClaudeScraper()
         output = tmp_path / "mapping.json"
-        mock_pw, mock_page = _make_pw_mock()
-        _prepopulate(scraper)
+        scraper._org_id = ORG_UUID
+        mock_pw, mock_page = _make_pw_mock(
+            starred_chats=CHATS_STARRED,
+            unstarred_chats=CHATS_UNSTARRED,
+        )
 
         with patch.object(
             scraper,
@@ -457,8 +480,8 @@ class TestScrape:
             "networkidle"
         )
 
-        # No per-project navigation
-        assert mock_page.goto.call_count == 1
+        # Paginated fetch (2 evaluate calls)
+        assert mock_page.evaluate.call_count == 2
 
         # Summary printed
         args = [str(c) for c in mock_print.call_args_list]
@@ -474,7 +497,7 @@ class TestScrape:
     ):
         scraper = ClaudeScraper()
         output = tmp_path / "mapping.json"
-        _prepopulate(scraper)
+        scraper._org_id = ORG_UUID
 
         mock_pw = MagicMock()
         mock_browser = MagicMock()
@@ -484,6 +507,10 @@ class TestScrape:
         page_other.url = "https://google.com"
         page_claude = MagicMock()
         page_claude.url = "https://claude.ai/chat/123"
+        page_claude.evaluate.side_effect = [
+            CHATS_STARRED,
+            CHATS_UNSTARRED,
+        ]
 
         mock_context.pages = [page_other, page_claude]
         mock_browser.contexts = [mock_context]
@@ -509,13 +536,17 @@ class TestScrape:
     ):
         scraper = ClaudeScraper()
         output = tmp_path / "mapping.json"
-        _prepopulate(scraper)
+        scraper._org_id = ORG_UUID
 
         mock_pw = MagicMock()
         mock_browser = MagicMock()
         mock_context = MagicMock()
         page_other = MagicMock()
         page_other.url = "https://google.com"
+        page_other.evaluate.side_effect = [
+            CHATS_STARRED,
+            CHATS_UNSTARRED,
+        ]
         mock_context.pages = [page_other]
         mock_browser.contexts = [mock_context]
         mock_pw.chromium.connect_over_cdp.return_value = (
@@ -577,10 +608,11 @@ class TestScrape:
 
         mock_pw.stop.assert_called_once()
 
-    def test_raises_if_no_chats_captured(self):
+    def test_raises_if_no_chats_fetched(self):
         scraper = ClaudeScraper()
         scraper._org_id = ORG_UUID
         mock_pw, _ = _make_pw_mock()
+        # evaluate returns empty lists → no chats
 
         with (
             patch.object(
@@ -590,7 +622,7 @@ class TestScrape:
             ),
             pytest.raises(
                 RuntimeError,
-                match="No chats captured",
+                match="No chats fetched",
             ),
         ):
             scraper.scrape(Path("out.json"))
@@ -603,8 +635,11 @@ class TestScrape:
     ):
         scraper = ClaudeScraper()
         output = tmp_path / "sub" / "dir" / "mapping.json"
-        _prepopulate(scraper)
-        mock_pw, _ = _make_pw_mock()
+        scraper._org_id = ORG_UUID
+        mock_pw, _ = _make_pw_mock(
+            starred_chats=CHATS_STARRED,
+            unstarred_chats=CHATS_UNSTARRED,
+        )
 
         with patch.object(
             scraper,
@@ -620,8 +655,11 @@ class TestScrape:
         self, mock_print, tmp_path: Path
     ):
         scraper = ClaudeScraper()
-        _prepopulate(scraper)
-        mock_pw, _ = _make_pw_mock()
+        scraper._org_id = ORG_UUID
+        mock_pw, _ = _make_pw_mock(
+            starred_chats=CHATS_STARRED,
+            unstarred_chats=CHATS_UNSTARRED,
+        )
 
         with patch.object(
             scraper,
@@ -660,8 +698,11 @@ class TestScrape:
         scraper = ClaudeScraper(
             cdp_url="http://localhost:9333"
         )
-        _prepopulate(scraper)
-        mock_pw, _ = _make_pw_mock()
+        scraper._org_id = ORG_UUID
+        mock_pw, _ = _make_pw_mock(
+            starred_chats=CHATS_STARRED,
+            unstarred_chats=CHATS_UNSTARRED,
+        )
 
         with patch.object(
             scraper,
@@ -679,12 +720,16 @@ class TestScrape:
         self, mock_print, tmp_path: Path
     ):
         scraper = ClaudeScraper()
-        _prepopulate(scraper)
+        scraper._org_id = ORG_UUID
 
         mock_pw = MagicMock()
         mock_browser = MagicMock()
         mock_context = MagicMock()
         mock_new_page = MagicMock()
+        mock_new_page.evaluate.side_effect = [
+            CHATS_STARRED,
+            CHATS_UNSTARRED,
+        ]
         mock_context.pages = []
         mock_context.new_page.return_value = mock_new_page
         mock_browser.contexts = [mock_context]
@@ -709,8 +754,11 @@ class TestScrape:
         self, mock_print, tmp_path: Path
     ):
         scraper = ClaudeScraper()
-        _prepopulate(scraper)
-        mock_pw, mock_page = _make_pw_mock()
+        scraper._org_id = ORG_UUID
+        mock_pw, mock_page = _make_pw_mock(
+            starred_chats=CHATS_STARRED,
+            unstarred_chats=CHATS_UNSTARRED,
+        )
 
         with patch.object(
             scraper,
@@ -744,19 +792,12 @@ class TestStartPlaywright:
 
 
 class TestIntegrationFlow:
-    """Full interception→mapping flow without Playwright."""
+    """Full process→mapping flow without Playwright."""
 
-    def test_capture_then_build(self):
+    def test_process_then_build(self):
         scraper = ClaudeScraper()
+        scraper._process_chats(ALL_CHATS)
 
-        resp = _mock_response(
-            "https://claude.ai/api/organizations/"
-            f"{ORG_UUID}/chat_conversations",
-            ALL_CHATS,
-        )
-        scraper._handle_response(resp)
-
-        assert scraper._org_id == ORG_UUID
         assert len(scraper._chats) == 4
         assert len(scraper._projects) == 2
 
@@ -774,19 +815,8 @@ class TestIntegrationFlow:
     def test_pagination_merges(self):
         scraper = ClaudeScraper()
 
-        r1 = _mock_response(
-            "https://claude.ai/api/organizations/"
-            f"{ORG_UUID}/chat_conversations?starred=true",
-            CHATS_STARRED,
-        )
-        r2 = _mock_response(
-            "https://claude.ai/api/organizations/"
-            f"{ORG_UUID}/chat_conversations?starred=false",
-            CHATS_UNSTARRED,
-        )
-
-        scraper._handle_response(r1)
-        scraper._handle_response(r2)
+        scraper._process_chats(CHATS_STARRED)
+        scraper._process_chats(CHATS_UNSTARRED)
 
         assert len(scraper._chats) == 4
         mapping = scraper._build_mapping()

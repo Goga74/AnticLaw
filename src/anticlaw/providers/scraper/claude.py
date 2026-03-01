@@ -1,9 +1,10 @@
-"""Claude.ai Playwright scraper — intercepts chat_conversations API.
+"""Claude.ai Playwright scraper — paginated chat_conversations fetch.
 
-Connects to Chrome via CDP, navigates to claude.ai, and captures
-chat_conversations API responses. Each chat object contains a project
-field with uuid and name, so a single page load captures the full
-chat→project mapping without per-project navigation.
+Connects to Chrome via CDP, navigates to claude.ai, discovers org_id
+from intercepted API responses, then uses page.evaluate() with
+cursor-based pagination to fetch ALL chats (starred + unstarred).
+Each chat object contains a project field with uuid and name, so a
+single session captures the full chat→project mapping.
 """
 
 from __future__ import annotations
@@ -23,9 +24,40 @@ log = logging.getLogger(__name__)
 BASE_URL = "https://claude.ai"
 
 _RE_ORG_ID = re.compile(r"/api/organizations/([a-f0-9-]{36})/")
-_RE_CHAT_CONVERSATIONS = re.compile(
-    r"/api/organizations/[^/]+/chat_conversations"
-)
+
+# JavaScript for cursor-based pagination of chat_conversations.
+# Accepts [orgId, starred] array. Returns all chats across pages.
+_JS_FETCH_CHATS = """
+async (args) => {
+    const [orgId, starred] = args;
+    const chats = [];
+    const starredParam = starred ? "true" : "false";
+    let url = `/api/organizations/${orgId}/chat_conversations`
+        + `?limit=50&starred=${starredParam}`
+        + `&consistency=eventual`;
+    while (url) {
+        const r = await fetch(url);
+        const data = await r.json();
+        const items = Array.isArray(data)
+            ? data
+            : (data.conversations || data.chats
+               || data.data || []);
+        chats.push(...items);
+        const cursor = data.next_page_token
+            || data.cursor
+            || data.next_cursor
+            || null;
+        url = cursor
+            ? `/api/organizations/${orgId}`
+              + `/chat_conversations`
+              + `?limit=50&starred=${starredParam}`
+              + `&consistency=eventual&cursor=${cursor}`
+            : null;
+        if (items.length < 50) break;
+    }
+    return chats;
+}
+"""
 
 
 class ClaudeScraper:
@@ -52,7 +84,7 @@ class ClaudeScraper:
         )
 
     def _handle_response(self, response: object) -> None:
-        """Intercept org_id and chat_conversations."""
+        """Intercept org_id from any API response."""
         url = response.url  # type: ignore[attr-defined]
 
         if not self._org_id:
@@ -61,27 +93,11 @@ class ClaudeScraper:
                 self._org_id = m.group(1)
                 log.info("Discovered org_id: %s", self._org_id)
 
-        if _RE_CHAT_CONVERSATIONS.search(url):
-            self._handle_chat_conversations(response)
+    def _process_chats(self, chats: list[dict]) -> int:
+        """Store chat objects and extract project info.
 
-    def _handle_chat_conversations(
-        self, response: object
-    ) -> None:
-        """Extract chats and project info from response."""
-        try:
-            body = response.json()  # type: ignore[attr-defined]
-        except Exception:
-            log.debug("Could not parse chat_conversations")
-            return
-
-        chats: list[dict] = []
-        if isinstance(body, list):
-            chats = body
-        elif isinstance(body, dict):
-            chats = body.get("data", body.get("chats", []))
-            if not isinstance(chats, list):
-                chats = []
-
+        Returns count of chats added.
+        """
         count = 0
         for chat in chats:
             chat_uuid = chat.get("uuid", "")
@@ -100,10 +116,29 @@ class ClaudeScraper:
                 }
 
         log.info(
-            "Captured %d chats (total %d)",
+            "Processed %d chats (total %d)",
             count,
             len(self._chats),
         )
+        return count
+
+    def _fetch_all_chats(self, page: object) -> None:
+        """Fetch all chats via paginated evaluate calls."""
+        for starred in (True, False):
+            label = "starred" if starred else "unstarred"
+            log.info("Fetching %s chats...", label)
+            result = page.evaluate(  # type: ignore[attr-defined]
+                _JS_FETCH_CHATS, [self._org_id, starred]
+            )
+            if not isinstance(result, list):
+                result = []
+            added = self._process_chats(result)
+            log.info(
+                "Fetched %d %s chats (total %d)",
+                added,
+                label,
+                len(self._chats),
+            )
 
     def _build_mapping(self) -> ScrapedMapping:
         """Build mapping from captured chats."""
@@ -146,7 +181,7 @@ class ClaudeScraper:
         return sync_playwright().start()
 
     def scrape(self, output: Path) -> ScrapedMapping:
-        """Load claude.ai, capture chat_conversations, save."""
+        """Load claude.ai, fetch all chats via pagination."""
         pw = self._start_playwright()
         try:
             browser = pw.chromium.connect_over_cdp(
@@ -184,10 +219,13 @@ class ClaudeScraper:
                     "Is Chrome logged in to claude.ai?"
                 )
 
+            # Fetch ALL chats with cursor-based pagination
+            self._fetch_all_chats(page)
+
             if not self._chats:
                 raise RuntimeError(
-                    "No chats captured from "
-                    "chat_conversations responses."
+                    "No chats fetched from "
+                    "chat_conversations API."
                 )
 
             mapping = self._build_mapping()
