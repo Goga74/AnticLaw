@@ -1,4 +1,4 @@
-"""CLI commands for scraping LLM platforms via HTTP API."""
+"""CLI commands for scraping LLM platforms via Playwright CDP."""
 
 from __future__ import annotations
 
@@ -11,20 +11,17 @@ import click
 def scrape_group() -> None:
     """Scrape chat→project mapping from LLM platforms.
 
-    Uses direct HTTP API calls (no browser needed).
-    Requires a session cookie from your browser.
+    Uses Playwright response interception via Chrome DevTools Protocol (CDP).
+    Requires Chrome to be running with remote debugging enabled.
     """
 
 
 @scrape_group.command("claude")
 @click.option(
-    "--session-key",
-    required=True,
-    help=(
-        "Session cookie value from claude.ai. "
-        "To get it: open claude.ai → DevTools (F12) → Application tab "
-        "→ Cookies → claude.ai → copy the 'sessionKey' value."
-    ),
+    "--cdp-url",
+    default="http://localhost:9222",
+    show_default=True,
+    help="Chrome DevTools Protocol endpoint URL.",
 )
 @click.option(
     "--output",
@@ -40,20 +37,27 @@ def scrape_group() -> None:
     default=None,
     help="AnticLaw home directory (default: ~/anticlaw or ACL_HOME).",
 )
-def scrape_claude(session_key: str, output: Path, home: Path | None) -> None:
-    """Scrape chat→project mapping from Claude.ai.
+def scrape_claude(cdp_url: str, output: Path, home: Path | None) -> None:
+    """Scrape chat→project mapping from Claude.ai via Playwright CDP.
 
     \b
-    How to get your session key:
-      1. Open https://claude.ai in your browser
-      2. Open DevTools (F12)
-      3. Go to Application tab → Cookies → claude.ai
-      4. Copy the value of 'sessionKey'
+    Prerequisites:
+      1. Start Chrome with remote debugging:
+         chrome --remote-debugging-port=9222
+      2. Log in to https://claude.ai in that Chrome instance
 
     \b
-    Example:
-      aw scrape claude --session-key "sk-ant-sid01-..."
-      aw scrape claude --session-key "sk-ant-sid01-..." -o my-mapping.json
+    Usage:
+      aw scrape claude
+      aw scrape claude --cdp-url http://localhost:9333
+      aw scrape claude -o my-mapping.json
+
+    \b
+    How it works:
+      - Connects to Chrome via CDP (no extra login needed)
+      - Automatically fetches project list and navigates each project
+      - Collects chat→project mapping from intercepted API responses
+      - Saves the mapping when done
 
     \b
     Then use the mapping with import:
@@ -62,8 +66,8 @@ def scrape_claude(session_key: str, output: Path, home: Path | None) -> None:
     from anticlaw.core.fileutil import safe_filename
     from anticlaw.providers.scraper.claude import ClaudeScraper
 
-    scraper = ClaudeScraper(session_key=session_key)
-    click.echo("Scraping Claude.ai projects and chat mapping...")
+    scraper = ClaudeScraper(cdp_url=cdp_url)
+    click.echo(f"Connecting to Chrome at {cdp_url}...")
 
     try:
         mapping = scraper.scrape(output)
@@ -72,7 +76,7 @@ def scrape_claude(session_key: str, output: Path, home: Path | None) -> None:
     except Exception as e:
         raise click.ClickException(f"Scrape failed: {e}") from e
 
-    click.echo(f"Found {len(mapping.projects)} projects:")
+    click.echo(f"\nFound {len(mapping.projects)} projects:")
     for proj_info in mapping.projects.values():
         name = proj_info.get("name", "Untitled")
         folder = safe_filename(name)
@@ -86,4 +90,6 @@ def scrape_claude(session_key: str, output: Path, home: Path | None) -> None:
         f"across {len(mapping.projects)} projects."
     )
     click.echo(f"Saved to: {output}")
-    click.echo(f"\nUse with import: aw import claude export.zip --mapping {output}")
+    click.echo(
+        f"\nUse with import: aw import claude export.zip --mapping {output}"
+    )
