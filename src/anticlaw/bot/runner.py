@@ -154,6 +154,10 @@ def run_aw_remember(
 
 
 def _get_env() -> dict[str, str]:
-    """Get current environment as a dict."""
+    """Get current environment as a dict, cleaned for subprocess use."""
     import os
-    return dict(os.environ)
+
+    env = dict(os.environ)
+    # Remove CLAUDECODE to allow launching claude CLI from bot subprocess
+    env.pop("CLAUDECODE", None)
+    return env
