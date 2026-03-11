@@ -74,7 +74,7 @@ class TestRunClaudeCommand:
         result = run_claude_command("write a test", tmp_path)
         assert "implementation" in result
         args = mock_run.call_args
-        assert args[0][0] == ["claude", "--print", "write a test"]
+        assert args[0][0] == ["claude", "--print", "--dangerously-skip-permissions", "write a test"]
         assert args[1]["cwd"] == str(tmp_path)
 
     @patch("anticlaw.bot.runner.subprocess.run")
@@ -117,7 +117,7 @@ class TestRunClaudeRaw:
         result = run_claude_raw("say hello")
         assert result == "Hello world"
         args = mock_run.call_args
-        assert args[0][0] == ["claude", "--print", "say hello"]
+        assert args[0][0] == ["claude", "--print", "--dangerously-skip-permissions", "say hello"]
         # Should NOT have cwd set
         assert "cwd" not in args[1] or args[1].get("cwd") is None
 
