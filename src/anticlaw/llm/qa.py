@@ -14,8 +14,12 @@ log = logging.getLogger(__name__)
 
 _QA_PROMPT = """\
 Answer the following question based ONLY on the provided context from a knowledge base.
-If the context doesn't contain enough information, say so honestly.
-Include references to specific chats when relevant (use their titles).
+
+CRITICAL RULES:
+1. If the context is NOT relevant to the question, reply EXACTLY: "NOT_FOUND"
+2. Do NOT guess, speculate, or use general knowledge. ONLY use facts from the context below.
+3. If context is about completely different topics than the question, reply "NOT_FOUND".
+4. Include references to specific chats when relevant (use their titles).
 
 Question: {question}
 
@@ -23,6 +27,11 @@ Context:
 {context}
 
 Answer:"""
+
+_NOT_FOUND_REPLY = (
+    "I did not find relevant information in the knowledge base for this question.\n"
+    "Try /search with specific keywords, or rephrase your question."
+)
 
 
 @dataclass
@@ -90,6 +99,8 @@ def ask(
 
     try:
         answer = client.generate(prompt)
+        if "NOT_FOUND" in answer.strip()[:20]:
+            return QAResult(answer=_NOT_FOUND_REPLY, sources=[])
         return QAResult(answer=answer, sources=used_results)
     except OllamaNotAvailableError:
         log.warning("Ollama not available — cannot answer question")

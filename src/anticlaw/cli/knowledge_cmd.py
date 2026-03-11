@@ -168,7 +168,8 @@ def health_cmd(home: Path | None) -> None:
     click.echo(f"Issues ({len(report.issues)}):\n")
     for issue in report.issues:
         severity_mark = "!" if issue.severity == "error" else "?"
-        click.echo(f"  [{severity_mark}] {issue.category}: {issue.message}")
+        msg = issue.message.encode("ascii", errors="replace").decode("ascii")
+        click.echo(f"  [{severity_mark}] {issue.category}: {msg}")
 
 
 # --- aw retention preview / run ---

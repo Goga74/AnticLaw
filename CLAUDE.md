@@ -37,6 +37,12 @@ src/anticlaw/
 │   ├── embeddings.py        # Ollama/OpenAI/local embedding providers
 │   ├── retention.py         # ✅ 3-zone lifecycle (active → archive → purge)
 │   └── antientropy.py       # ✅ Inbox suggestions, stale detection, duplicates, health check
+├── bot/
+│   ├── __init__.py              # ✅ Package init
+│   ├── bot.py                   # ✅ Main bot loop (python-telegram-bot, polling)
+│   ├── handlers.py              # ✅ One handler per command + NL fallback
+│   ├── runner.py                # ✅ Subprocess wrapper for aw CLI + claude CLI
+│   └── __main__.py              # ✅ Entry point for python -m anticlaw.bot
 ├── mcp/
 │   ├── server.py            # ✅ FastMCP server — 13 tools (all implemented)
 │   ├── context_store.py     # ✅ Context-as-variable storage + 6 chunking strategies
@@ -108,6 +114,7 @@ src/anticlaw/
     ├── listen_cmd.py         # ✅ aw listen [--continuous] [--mode ask] (voice input)
     ├── clear_cmd.py          # ✅ aw clear [--all] (delete _inbox/_archive contents)
     ├── scraper_cmd.py        # ✅ aw scrape claude --session-key <KEY> [-o mapping.json]
+    ├── bot_cmd.py            # ✅ aw bot start, aw bot auth
     ├── provider_cmd.py       # aw providers ...
     ├── sync_cmd.py           # ✅ aw send <chat-id>, aw chat <project> (bidirectional sync)
     ├── daemon_cmd.py         # ✅ aw daemon start/stop/status/install/uninstall/logs
@@ -185,6 +192,9 @@ aw clear                         # Delete all files in _inbox/ (with confirmatio
 aw clear --all                   # Delete _inbox/ + _archive/ + rebuild index
 aw scrape claude --session-key KEY  # Scrape chat→project mapping from claude.ai
 aw scrape claude --session-key KEY -o map.json  # Custom output path
+aw bot start                     # Start Telegram bot (long polling)
+aw bot start --daemon            # Start bot in background
+aw bot auth                      # Set Telegram bot token (keyring)
 ```
 
 ## File Format: Chat (.md)
@@ -216,7 +226,7 @@ There are three main approaches...
 
 ## Current Phase
 
-Phase 18 next (Alexa integration). Phase 17 complete.
+Phase 18 complete. Next: Phase 19 (TBD).
 
 ### Completed
 - **Phase 0:** Scaffolding — pyproject.toml, directory structure, `aw --version` ✅
@@ -237,9 +247,10 @@ Phase 18 next (Alexa integration). Phase 17 complete.
 - **Phase 15:** Gemini provider — GeminiProvider (parse Google Takeout ZIP or extracted directory, per-conversation-folder structure with conversation.json, multi-format support: text/content/parts/chunkedPrompt, ISO+Unix timestamps, user/model→human/assistant role normalization, title from JSON or folder name, model extraction from conversation or message metadata), reuses scrub_text from Claude provider, CLI: `aw import gemini <takeout.zip-or-dir> [--scrub] [--home PATH]`, cross-provider search (results from Claude + ChatGPT + Gemini) ✅
 - **Phase 16:** Voice input via Whisper — InputProvider Protocol + InputInfo (fifth provider family), WhisperInputProvider (faster-whisper CTranslate2 backend, models: tiny/base/small/medium, sounddevice recording, silence detection with auto-stop, push-to-talk mode, Russian + English auto-detect via Whisper), CLI: `aw listen` (single query → search → results), `aw listen --continuous` (loop mode), `aw listen --mode ask` (voice Q&A via Ollama), `--model`/`--language`/`--push-to-talk` overrides, graceful fallback when faster-whisper/sounddevice not installed, config: `voice` section (model, language, push_to_talk, silence_threshold, max_duration), deps: `voice` extra (faster-whisper, sounddevice, numpy) ✅
 - **Phase 17:** Playwright scraper for chat→project mapping — ScraperProvider Protocol + ScraperInfo + ScrapedMapping (sixth provider family), ClaudeScraper (Playwright CDP, response interception for org_id, page.evaluate() with offset-based pagination for chat_conversations, starred + unstarred fetch, project info from chat objects), mapping.json output format (`{chats, projects, scraped_at}`), load_project_mapping supports both new and legacy formats, CLI: `aw scrape claude [--cdp-url] [-o mapping.json]`, docs/SCRAPER.md, deps: `scraper` extra (playwright) ✅
+- **Phase 18:** Telegram bot (`aw bot start`) — /search, /ask, /note, /code, /cc, /status, /help, python-telegram-bot polling, Windows 11, keyring auth, user whitelist, Claude Code subprocess integration ✅
 
 ### Test coverage
-993 unit tests passing (models, fileutil, storage, config, registry, claude provider, chatgpt provider, gemini provider, import CLI (claude + chatgpt + gemini), cross-provider import (3-provider), init CLI, meta_db, search, search CLI, project CLI, context store, hooks, MCP tools, MCP CLI, embedding provider, vector index, advanced search tiers, fallback behavior, entities, graph, graph CLI, ollama client, summarizer, tagger, Q&A, LLM CLI, backup base, backup local, backup gdrive, watcher, watcher draft detection, scheduler, IPC, service, daemon CLI, backup CLI, cron CLI, retention, antientropy, knowledge CLI, source models, local files provider, meta_db source files, search unified, scan CLI, API server, UI routes, sync providers, sync engine, sync CLI, input base, whisper input, listen CLI, clear CLI, scraper base, scraper claude, scraper CLI).
+1050+ unit tests passing (models, fileutil, storage, config, registry, claude provider, chatgpt provider, gemini provider, import CLI (claude + chatgpt + gemini), cross-provider import (3-provider), init CLI, meta_db, search, search CLI, project CLI, context store, hooks, MCP tools, MCP CLI, embedding provider, vector index, advanced search tiers, fallback behavior, entities, graph, graph CLI, ollama client, summarizer, tagger, Q&A, LLM CLI, backup base, backup local, backup gdrive, watcher, watcher draft detection, scheduler, IPC, service, daemon CLI, backup CLI, cron CLI, retention, antientropy, knowledge CLI, source models, local files provider, meta_db source files, search unified, scan CLI, API server, UI routes, sync providers, sync engine, sync CLI, input base, whisper input, listen CLI, clear CLI, scraper base, scraper claude, scraper CLI, bot handlers, bot runner).
 
 ## Specs
 
@@ -259,13 +270,10 @@ Read these files BEFORE implementing any phase. They contain exact data models, 
 6. **Tests for every module.** Write tests alongside code, not after. Minimum: happy path + error case.
 7. **After completing a task**, update this file's "Current Phase" section if the phase changed.
 
-## Planned Features (post-Phase 17)
+## Planned Features (post-Phase 18)
 
 Key upcoming features documented in PLAN.md and SPEC.md:
-- **Phase 15:** ~~Gemini provider — Google Takeout import (`aw import gemini`)~~ (done)
-- **Phase 16:** ~~Voice input via Whisper (`aw listen`)~~ (done)
-- **Phase 17:** ~~HTTP scraper — chat→project mapping (`aw scrape claude`)~~ (done)
-- **Phase 18:** Alexa integration
+- **Phase 19:** Alexa integration
 - **Scraper providers:** Additional scrapers (chatgpt, gemini, perplexity) via httpx
 - **6 provider families:** LLM, Backup, Embedding, Source, Input, Scraper
 

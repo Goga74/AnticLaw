@@ -576,8 +576,6 @@ def health_check(home: Path) -> HealthReport:
 
         if (home / "_inbox").exists():
             dirs_to_scan.append(home / "_inbox")
-        if (home / "_archive").exists():
-            dirs_to_scan.append(home / "_archive")
 
         for entry in sorted(home.iterdir()):
             if not entry.is_dir():

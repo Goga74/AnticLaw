@@ -700,6 +700,7 @@ aw restore <chat-id>                  # Restore from archive
 | CLI framework | Click | Standard, well-documented |
 | Config format | YAML | Human-readable, widely supported |
 | Chat format | Markdown + YAML frontmatter | Readable, Obsidian-compatible, greppable |
+| Telegram bot | python-telegram-bot>=20.0 (optional) | Long polling, async, no webhook needed |
 | Browser automation | Playwright (optional) | One-time scraping of Claude/ChatGPT structure |
 
 ### Optional dependency tiers
@@ -710,6 +711,7 @@ pip install anticlaw[search]               # + BM25 ranked search (~5 MB)
 pip install anticlaw[search,fuzzy]         # + typo tolerance (~7 MB)
 pip install anticlaw[search,semantic]      # + vector embeddings (~40 MB)
 pip install anticlaw[all]                  # Everything
+pip install anticlaw[bot]                  # + Telegram bot interface
 pip install anticlaw[scraper]              # + Playwright for one-time import
 ```
 
@@ -735,6 +737,12 @@ anticlaw/
 │   │   ├── entities.py          # ✅ Regex entity extractor
 │   │   ├── embeddings.py        # (unused — embedding providers in providers/embedding/)
 │   │   └── retention.py         # 3-zone lifecycle
+│   ├── bot/
+│   │   ├── __init__.py          # ✅ Package init
+│   │   ├── bot.py               # ✅ Main bot loop (python-telegram-bot, polling)
+│   │   ├── handlers.py          # ✅ Command handlers + NL fallback
+│   │   ├── runner.py            # ✅ Subprocess wrapper for aw/claude CLI
+│   │   └── __main__.py          # ✅ Entry point for python -m anticlaw.bot
 │   ├── mcp/
 │   │   ├── server.py            # ✅ FastMCP server — 13 tools (all implemented)
 │   │   ├── context_store.py     # ✅ Context-as-variable storage + chunking
@@ -785,6 +793,7 @@ anticlaw/
 │       ├── graph_cmd.py         # ✅ aw related, aw why, aw timeline
 │       ├── llm_cmd.py           # ✅ aw summarize, aw autotag, aw ask
 │       ├── knowledge_cmd.py     # aw inbox, stale, duplicates ...
+│       ├── bot_cmd.py           # ✅ aw bot start, aw bot auth
 │       ├── provider_cmd.py      # aw providers ...
 │       ├── sync_cmd.py          # aw send, aw sync, aw push, aw pull (Phase 14)
 │       ├── daemon_cmd.py        # aw daemon ...
@@ -865,6 +874,13 @@ sync:
       api_key: keyring
     gemini:
       api_key: keyring
+
+# Telegram Bot (Phase 18)
+bot:
+  telegram_token: keyring                    # Stored in system keyring, never in file
+  allowed_user_ids: []                       # Whitelist of Telegram user IDs; empty = allow all
+  claude_code_path: "claude"                 # Path to claude CLI for /code command
+  max_response_length: 4000                  # Telegram message character limit
 
 # MCP
 mcp:

@@ -790,6 +790,57 @@ Goal: Production-ready release.
 
 ---
 
+### Phase 18: Telegram Bot Interface
+
+```
+Goal: Single Telegram bot with long polling for interacting with KB from mobile.
+```
+
+**Files:**
+
+`src/anticlaw/bot/`:
+- [x] `__init__.py` — package init
+- [x] `bot.py` — main bot loop (python-telegram-bot, long polling, no webhook)
+- [x] `handlers.py` — 6 commands (/search, /ask, /note, /code, /status, /help) + NL fallback
+- [x] `runner.py` — subprocess wrapper for `aw` CLI + `claude` CLI
+- [x] `__main__.py` — entry point for `python -m anticlaw.bot`
+
+`src/anticlaw/cli/`:
+- [x] `bot_cmd.py` — `aw bot start [--daemon]`, `aw bot auth`
+
+**Features:**
+- [x] Natural language intent detection (RU + EN): search/code/ask
+- [x] User whitelist via `allowed_user_ids` config
+- [x] Token stored in system keyring (never in config)
+- [x] `/code` command disabled if claude CLI not in PATH
+- [x] Telegram message truncation (4000 char limit)
+- [x] `@botname` suffix handling in commands
+
+**Config (config.yaml):**
+```yaml
+bot:
+  allowed_user_ids: []
+  claude_code_path: "claude"
+  max_response_length: 4000
+  log_level: "info"
+```
+
+**Dependencies:** `pip install 'anticlaw[bot]'` → `python-telegram-bot>=20.0`
+
+**Tests:** 56 unit tests (handlers, runner, intent detection, routing, subprocess mocks)
+
+**Deliverable:** `aw bot auth && aw bot start` — working Telegram bot
+
+---
+
+### Phase 19: TBD
+
+```
+Goal: TBD
+```
+
+---
+
 ### Phase 12: Local File Source + HTTP API (Days 31–35)
 
 ```

@@ -5,6 +5,7 @@ import click
 from anticlaw import __version__
 from anticlaw.cli.api_cmd import api_group, ui_cmd
 from anticlaw.cli.backup_cmd import backup_group
+from anticlaw.cli.bot_cmd import bot_group
 from anticlaw.cli.clear_cmd import clear_cmd
 from anticlaw.cli.cron_cmd import cron_group
 from anticlaw.cli.daemon_cmd import daemon_group
@@ -77,6 +78,7 @@ cli.add_command(chat_cmd)
 cli.add_command(listen_cmd)
 cli.add_command(clear_cmd)
 cli.add_command(scrape_group)
+cli.add_command(bot_group)
 
 
 if __name__ == "__main__":

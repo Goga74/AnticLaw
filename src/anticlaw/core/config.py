@@ -104,6 +104,12 @@ DEFAULTS: dict = {
         "max_duration": 30.0,
         "model_path": None,
     },
+    "bot": {
+        "allowed_user_ids": [],
+        "claude_code_path": "claude",
+        "max_response_length": 4000,
+        "log_level": "info",
+    },
     "daemon": {
         "enabled": False,
         "autostart": False,

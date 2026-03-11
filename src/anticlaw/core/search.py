@@ -28,7 +28,15 @@ log = logging.getLogger(__name__)
 
 def _has_bm25s() -> bool:
     try:
-        import bm25s  # noqa: F401
+        import io
+        import sys
+
+        _stdout = sys.stdout
+        sys.stdout = io.StringIO()
+        try:
+            import bm25s  # noqa: F401
+        finally:
+            sys.stdout = _stdout
         return True
     except ImportError:
         return False
@@ -185,7 +193,7 @@ def _search_bm25(
     max_results: int = 20,
 ) -> list[SearchResult]:
     """Tier 2: BM25 ranked search via bm25s library."""
-    import bm25s
+    import bm25s  # already imported silently via _has_bm25s()
 
     docs = _load_filtered_docs(
         db, project=project, tags=tags, importance=importance,

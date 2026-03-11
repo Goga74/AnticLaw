@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 import click
@@ -9,6 +10,15 @@ import click
 from anticlaw.core.config import resolve_home
 from anticlaw.core.meta_db import MetaDB
 from anticlaw.core.search import search
+
+
+def _safe_echo(text: str) -> None:
+    """Echo text, replacing unencodable characters for Windows consoles."""
+    try:
+        click.echo(text)
+    except UnicodeEncodeError:
+        encoding = sys.stdout.encoding or "utf-8"
+        click.echo(text.encode(encoding, errors="replace").decode(encoding))
 
 
 @click.command("search")
@@ -57,13 +67,13 @@ def search_cmd(
             click.echo("No results found.")
             return
 
-        click.echo(f"Found {len(results)} result(s):\n")
+        _safe_echo(f"Found {len(results)} result(s):\n")
         for r in results:
             proj = r.project_id or "_inbox"
-            click.echo(f"  [{proj}] {r.title}")
-            click.echo(f"    ID: {r.chat_id[:8]}")
+            _safe_echo(f"  [{proj}] {r.title}")
+            _safe_echo(f"    ID: {r.chat_id[:8]}")
             if r.snippet:
-                click.echo(f"    {r.snippet}")
-            click.echo()
+                _safe_echo(f"    {r.snippet}")
+            _safe_echo("")
     finally:
         db.close()
